@@ -69,6 +69,11 @@ func (s Settings) LoadCache() (Cache, error) {
 	}
 	var mapping map[string][]string
 	if err := files.Read(filepath.Join(s.StateDir, "subscription-sources.json"), &mapping); err != nil {
+		// Older caches may predate source tracking. Without this mapping the
+		// nodes cannot be attributed safely; let update fetch a fresh cache.
+		if os.IsNotExist(err) {
+			return cache, nil
+		}
 		return nil, err
 	}
 	byTag := map[string]singbox.Outbound{}

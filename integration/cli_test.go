@@ -288,6 +288,36 @@ func TestManySourcesAndLegacyMigration(t *testing.T) {
 	}
 }
 
+func TestUpdateBootstrapsLegacyCacheWithoutSourceMapping(t *testing.T) {
+	f := newFixture(t)
+	if err := os.MkdirAll(filepath.Join(f.dir, "state"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	f.write("state/subscription-outbounds.json", json.RawMessage(`[{"tag":"old","type":"shadowsocks","server":"old.example"}]`))
+	f.write("state/config.json", map[string]any{"existing": true})
+	previous := f.read("state/config.json")
+	if output := f.run("", false, "prepare"); !strings.Contains(output, "has no cached nodes") {
+		t.Fatal(output)
+	}
+	if f.count("/one") != 0 || f.read("state/config.json") != previous {
+		t.Fatal("offline preparation fetched or replaced existing config")
+	}
+	f.setBody("/two", "invalid subscription")
+	f.run("", false, "update")
+	if f.read("state/config.json") != previous {
+		t.Fatal("failed bootstrap replaced existing config")
+	}
+	f.setBody("/two", `[{"type":"shadowsocks","tag":"b","server":"two.example"}]`)
+	f.run("", true, "update")
+	f.run("", true, "prepare")
+	if strings.Contains(f.read("state/cache.json"), "old.example") {
+		t.Fatal("unattributed legacy nodes were imported")
+	}
+	if !strings.Contains(f.read("state/subscription-outbounds.json"), "old.example") {
+		t.Fatal("legacy source file was modified")
+	}
+}
+
 func TestRestartFailureAndCLIValidation(t *testing.T) {
 	f := newFixture(t)
 	f.config["restart_command"] = []string{helper, "restart"}

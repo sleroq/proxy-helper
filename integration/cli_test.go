@@ -303,6 +303,16 @@ func TestRestartFailureAndCLIValidation(t *testing.T) {
 	f.run("", false, "subscription", "list")
 }
 
+func TestRestartCanPrepareWithoutLockConflict(t *testing.T) {
+	f := newFixture(t)
+	f.config["restart_command"] = []string{binary, "--config", filepath.Join(f.dir, "config.json"), "prepare"}
+	f.write("config.json", f.config)
+	f.run("", true, "update")
+	if f.count("/one") != 1 || f.count("/two") != 1 {
+		t.Fatal("restart fetched subscriptions instead of preparing from cache")
+	}
+}
+
 func TestStandaloneInit(t *testing.T) {
 	dir := t.TempDir()
 	cmd := exec.Command(binary, "init")
@@ -327,11 +337,26 @@ func TestRealConverterAndCore(t *testing.T) {
 	}
 	f := newFixture(t)
 	f.config["sing_box"], f.config["converter"] = core, converter
+	if template := os.Getenv("SB_REAL_TEMPLATE"); template != "" {
+		f.config["template_file"] = template
+	}
 	f.write("config.json", f.config)
+	// Nix declares URL-file references, not URL values. Exercise that exact
+	// boundary with a relative file reference and CRLF-terminated provider URL.
+	if err := os.WriteFile(filepath.Join(f.dir, "provider-url"), []byte(f.server.URL+"/one?token=private\r\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	f.write("declared.json", map[string]any{"subscriptions": []any{
+		map[string]any{"id": "one", "url_file": "provider-url", "prefix": "one-"},
+		f.source("two", "/two"),
+	}})
 	credentials := base64.StdEncoding.EncodeToString([]byte("aes-128-gcm:integration-password"))
 	f.setBody("/one", "ss://"+credentials+"@127.0.0.1:8388#real-one\n")
 	f.setBody("/two", "ss://"+credentials+"@127.0.0.1:8389#real-two\n")
 	f.run("", true, "update")
+	if !strings.Contains(f.read("state/config.json"), "one-real-one") {
+		t.Fatal("converter prefix was not applied")
+	}
 	f.run("", true, "check")
 	f.run("", true, "subscription", "auto", "one", "--enabled", "false")
 	f.run("", true, "subscription", "auto", "two", "--enabled", "false")

@@ -204,4 +204,5 @@ nix build
 Only integration/end-to-end tests are used: compiled CLI processes, real local
 HTTP, filesystem permissions/symlinks, and subprocess doubles for the converter
 and validator. Optional real-core coverage uses `SB_REAL_CORE` and
-`SB_REAL_CONVERTER` absolute paths. It does not contact real providers or start TUN.
+`SB_REAL_CONVERTER` absolute paths, with optional `SB_REAL_TEMPLATE` to validate
+an existing non-secret native template. It does not contact real providers or start TUN.

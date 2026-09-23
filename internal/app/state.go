@@ -12,8 +12,9 @@ import (
 )
 
 type CachedSource struct {
-	UpdatedAt string             `json:"updated_at"`
-	Nodes     []singbox.Outbound `json:"nodes"`
+	UpdatedAt   string             `json:"updated_at"`
+	Nodes       []singbox.Outbound `json:"nodes"`
+	Unavailable bool               `json:"unavailable,omitempty"`
 }
 type Cache map[string]CachedSource
 type NodeInfo struct {
@@ -23,9 +24,40 @@ type NodeInfo struct {
 	Source    string `json:"source"`
 	Automatic bool   `json:"automatic"`
 }
+type SourceInfo struct {
+	ID          string `json:"id"`
+	UpdatedAt   string `json:"updatedAt"`
+	NodeCount   int    `json:"nodeCount"`
+	Unavailable bool   `json:"unavailable"`
+}
 type Manifest struct {
-	UpdatedAt string     `json:"updatedAt"`
-	Nodes     []NodeInfo `json:"nodes"`
+	UpdatedAt string       `json:"updatedAt"`
+	Nodes     []NodeInfo   `json:"nodes"`
+	Sources   []SourceInfo `json:"sources"`
+}
+type SourceHealth struct {
+	AttemptedAt string `json:"attemptedAt"`
+	Error       string `json:"error,omitempty"`
+}
+type Health map[string]SourceHealth
+
+func (s Settings) LoadHealth() (Health, error) {
+	health := Health{}
+	err := files.Read(filepath.Join(s.StateDir, "health.json"), &health)
+	if os.IsNotExist(err) {
+		return health, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if health == nil {
+		return nil, fmt.Errorf("health must be an object")
+	}
+	return health, nil
+}
+
+func (s Settings) WriteHealth(health Health) error {
+	return files.Write(filepath.Join(s.StateDir, "health.json"), health, 0644)
 }
 
 // Lock is released by the OS on process exit, including SIGKILL.

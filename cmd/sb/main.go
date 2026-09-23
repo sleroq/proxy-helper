@@ -168,23 +168,60 @@ func run(ctx context.Context, args []string) error {
 			return err
 		}
 		if command == "status" {
+			health, healthErr := settings.LoadHealth()
+			if healthErr != nil {
+				return healthErr
+			}
 			if os.IsNotExist(err) {
 				fmt.Println("subscription has not been updated")
 			} else {
 				fmt.Println("last update:", manifest.UpdatedAt)
 				fmt.Println("nodes:", len(manifest.Nodes))
-				counts := map[string]int{}
+			}
+			installed := map[string]app.SourceInfo{}
+			for _, source := range manifest.Sources {
+				installed[source.ID] = source
+			}
+			// A manifest from an older sb has nodes but no per-source summary.
+			if len(manifest.Sources) == 0 {
 				for _, node := range manifest.Nodes {
-					counts[node.Source]++
+					source := installed[node.Source]
+					source.ID = node.Source
+					source.NodeCount++
+					installed[node.Source] = source
 				}
-				ids := make([]string, 0, len(counts))
-				for id := range counts {
+			}
+			ids := make([]string, 0, len(installed)+len(health))
+			for id := range installed {
+				ids = append(ids, id)
+			}
+			for id := range health {
+				if _, ok := installed[id]; !ok {
 					ids = append(ids, id)
 				}
-				slices.Sort(ids)
-				for _, id := range ids {
-					fmt.Printf("  %s: %d\n", id, counts[id])
+			}
+			slices.Sort(ids)
+			for _, id := range ids {
+				source, installedOK := installed[id]
+				attempt := health[id]
+				state := "successful"
+				switch {
+				case attempt.Error != "" && (!installedOK || source.Unavailable):
+					state = "unavailable"
+				case attempt.Error != "":
+					state = "stale"
+				case attempt.AttemptedAt != "" && attempt.AttemptedAt != source.UpdatedAt:
+					state = "fetched, not installed"
+				case source.Unavailable:
+					state = "unavailable"
+				case !installedOK:
+					state = "not installed"
 				}
+				fmt.Printf("  %s: %s, nodes: %d, installed success: %s, last attempt: %s", id, state, source.NodeCount, source.UpdatedAt, attempt.AttemptedAt)
+				if attempt.Error != "" {
+					fmt.Printf(", failed: %s", attempt.Error)
+				}
+				fmt.Println()
 			}
 		}
 		selected, err := api.Selector(ctx)

@@ -52,6 +52,9 @@ func (c Converter) Fetch(ctx context.Context, source Source) ([]singbox.Outbound
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return nil, fmt.Errorf("source %s: HTTP %d", source.ID, response.StatusCode)
 	}
+	if response.ContentLength > 8<<20 {
+		return nil, fmt.Errorf("source %s: subscription response too large", source.ID)
+	}
 	return c.Parse(ctx, response.Body, source)
 }
 
@@ -70,8 +73,11 @@ func (c Converter) Parse(ctx context.Context, body io.Reader, source Source) ([]
 	if err != nil {
 		return nil, err
 	}
-	_, copyErr := io.Copy(file, body)
+	size, copyErr := io.Copy(file, io.LimitReader(body, (8<<20)+1))
 	closeErr := file.Close()
+	if size > 8<<20 {
+		return nil, fmt.Errorf("source %s: subscription response too large", source.ID)
+	}
 	if copyErr != nil || closeErr != nil {
 		return nil, fmt.Errorf("source %s: cannot save response", source.ID)
 	}

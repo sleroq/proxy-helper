@@ -212,13 +212,13 @@ func TestCLIWorkflow(t *testing.T) {
 	f.run("", true, "update", "three")
 	f.run("", true, "subscription", "delete", "three")
 	f.run("", true, "apply")
-	if strings.Contains(f.read("state/cache.json"), `"three"`) {
-		t.Fatal("deleted cache retained after apply")
+	if strings.Contains(f.read("state/cache.json"), `"three"`) || strings.Contains(f.read("state/health.json"), `"three"`) {
+		t.Fatal("deleted source retained after apply")
 	}
 }
 
 func TestFailedUpdatePreservesInstalledState(t *testing.T) {
-	for _, failure := range []string{"http", "placeholder", "collision", "invalid-json", "core"} {
+	for _, failure := range []string{"collision", "core"} {
 		t.Run(failure, func(t *testing.T) {
 			f := newFixture(t)
 			f.run("", true, "update")
@@ -227,16 +227,8 @@ func TestFailedUpdatePreservesInstalledState(t *testing.T) {
 				before[name] = f.read("state/" + name)
 			}
 			switch failure {
-			case "http":
-				f.mu.Lock()
-				delete(f.bodies, "/two")
-				f.mu.Unlock()
-			case "placeholder":
-				f.setBody("/two", `[{"type":"shadowsocks","tag":"b","server":"0.0.0.0"}]`)
 			case "collision":
 				f.setBody("/two", `[{"type":"shadowsocks","tag":"a","server":"two.example"}]`)
-			case "invalid-json":
-				f.setBody("/two", `not json token=private`)
 			case "core":
 				f.write("template.json", map[string]any{"reject": true})
 			}
@@ -246,8 +238,101 @@ func TestFailedUpdatePreservesInstalledState(t *testing.T) {
 					t.Fatalf("failed update modified %s", name)
 				}
 			}
+			if status := f.run("", true, "status"); !strings.Contains(status, "fetched, not installed") {
+				t.Fatal("candidate failure was reported as installed: ", status)
+			}
 		})
 	}
+}
+
+func TestPartialAndAllFailedUpdates(t *testing.T) {
+	f := newFixture(t)
+	f.run("", true, "update")
+	old := f.read("state/cache.json")
+	f.setBody("/one", `[{"type":"shadowsocks","tag":"new","server":"new.example"}]`)
+	f.mu.Lock()
+	delete(f.bodies, "/two")
+	f.mu.Unlock()
+	if output := f.run("", false, "update"); !strings.Contains(output, "updated: [one]; stale: [two]") {
+		t.Fatal(output)
+	}
+	if f.read("state/cache.json") == old || !strings.Contains(f.read("state/config.json"), "new.example") || !strings.Contains(f.read("state/config.json"), "two.example") {
+		t.Fatal("mixed snapshot not installed")
+	}
+	installed := f.read("state/config.json")
+	f.mu.Lock()
+	delete(f.bodies, "/one")
+	f.mu.Unlock()
+	f.config["restart_command"] = []string{helper, "restart"}
+	f.write("config.json", f.config)
+	if output := f.run("", false, "update"); strings.Contains(output, "restart failed") || !strings.Contains(output, "no subscription fetch succeeded") {
+		t.Fatal("all-failed refresh restarted: ", output)
+	}
+	delete(f.config, "restart_command")
+	f.write("config.json", f.config)
+	if f.read("state/config.json") != installed {
+		t.Fatal("all failed update installed config")
+	}
+	if status := f.run("", true, "status"); !strings.Contains(status, "one: stale") || !strings.Contains(status, "two: stale") {
+		t.Fatal(status)
+	}
+	f.setBody("/one", `[{"type":"shadowsocks","tag":"newer","server":"newer.example"}]`)
+	f.run("", true, "update", "one")
+	if status := f.run("", true, "status"); !strings.Contains(status, "two: stale") {
+		t.Fatal("targeted update erased other health: ", status)
+	}
+	for _, name := range []string{"health.json", "subscription.json"} {
+		data := f.read("state/" + name)
+		if strings.Contains(data, "token=private") || strings.Contains(data, "secret-one") {
+			t.Fatal("public metadata leaked credentials")
+		}
+		if stat, err := os.Stat(filepath.Join(f.dir, "state", name)); err != nil || stat.Mode().Perm() != 0644 {
+			t.Fatalf("public permissions %s: %v", name, err)
+		}
+	}
+}
+
+func TestAllFailedFirstBootDoesNotInstall(t *testing.T) {
+	f := newFixture(t)
+	if err := os.MkdirAll(filepath.Join(f.dir, "state"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	f.write("state/config.json", map[string]any{"existing": true})
+	before := f.read("state/config.json")
+	f.mu.Lock()
+	delete(f.bodies, "/one")
+	delete(f.bodies, "/two")
+	f.mu.Unlock()
+	if output := f.run("", false, "update"); !strings.Contains(output, "unavailable: [one two]") {
+		t.Fatal(output)
+	}
+	if f.read("state/config.json") != before {
+		t.Fatal("first-boot failure replaced installed configuration")
+	}
+	if status := f.run("", true, "status"); !strings.Contains(status, "one: unavailable") || !strings.Contains(status, "two: unavailable") {
+		t.Fatal(status)
+	}
+}
+
+func TestUpdateWithNoSubscriptionsAndStaticOutbound(t *testing.T) {
+	f := newFixture(t)
+	f.write("declared.json", map[string]any{"subscriptions": []any{}})
+	f.write("static.json", json.RawMessage(`[{"type":"shadowsocks","tag":"static","server":"static.example"}]`))
+	f.config["static_outbounds_file"] = "static.json"
+	f.write("config.json", f.config)
+	f.run("", true, "update")
+	if !strings.Contains(f.read("state/config.json"), "static.example") {
+		t.Fatal("static-only config not installed")
+	}
+}
+
+func TestOversizeResponse(t *testing.T) {
+	f := newFixture(t)
+	f.setBody("/one", strings.Repeat("x", (8<<20)+1))
+	if output := f.run("", false, "update"); !strings.Contains(f.read("state/health.json"), "subscription response too large") || !strings.Contains(output, "unavailable: [one]") {
+		t.Fatal(output)
+	}
+	f.run("", true, "prepare")
 }
 
 func TestManySourcesAndLegacyMigration(t *testing.T) {
@@ -304,9 +389,10 @@ func TestUpdateBootstrapsLegacyCacheWithoutSourceMapping(t *testing.T) {
 	}
 	f.setBody("/two", "invalid subscription")
 	f.run("", false, "update")
-	if f.read("state/config.json") != previous {
-		t.Fatal("failed bootstrap replaced existing config")
+	if f.read("state/config.json") == previous || !strings.Contains(f.read("state/cache.json"), `"unavailable": true`) {
+		t.Fatal("partial bootstrap did not install viable source and unavailable entry")
 	}
+	f.run("", true, "prepare")
 	f.setBody("/two", `[{"type":"shadowsocks","tag":"b","server":"two.example"}]`)
 	f.run("", true, "update")
 	f.run("", true, "prepare")

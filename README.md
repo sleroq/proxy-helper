@@ -34,7 +34,7 @@ reads exactly one source object from stdin and never accepts URLs as CLI argumen
 
 ```sh
 sb subscription list
-sb update                         # all enabled sources; all-or-nothing fetching
+sb update                         # attempt all enabled sources; install viable mixed snapshot
 sb subscription update main       # same as sb update main
 sb list
 sb test                           # default automatic group
@@ -47,7 +47,13 @@ sb check
 ```
 
 `list`, `status`, `test`, and `use` need the running Clash API. `list`/`status`
-read only a public manifest, not credentials. `subscription list` reads the actual
+read public `subscription.json` and `health.json`, not credentials. These 0644
+files disclose source IDs, node counts, timestamps, and generic fetch failures;
+keep IDs free of secrets. A partial update installs healthy and last-good cached
+sources, skips unavailable uncached sources, restarts, then exits nonzero. If no
+fetch succeeds or validation fails, the installed snapshot is unchanged; fetch
+health is still recorded. `prepare` can reuse unavailable entries when another
+outbound remains selectable. `subscription list` reads the actual
 private registry and therefore needs its owner's permissions (root on Nix).
 `check` deliberately forwards core diagnostics to the caller; do not publish them
 without reviewing for credentials.

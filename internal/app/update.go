@@ -17,43 +17,55 @@ import (
 
 type Manager struct{ Settings Settings }
 
-// Update fetches all requested sources before touching installed state. Other
-// enabled sources retain their cache; it never silently drops a failed source.
+// Update attempts every requested source and installs a validated mixed snapshot
+// when at least one fetch succeeds.
 func (m Manager) Update(ctx context.Context, ids []string) error {
 	lock, err := m.Settings.Lock()
 	if err != nil {
 		return err
 	}
-	err = m.updateLocked(ctx, ids)
+	failed, err := m.updateLocked(ctx, ids)
 	_ = lock.Close() // prepare runs during restart, so release before activation.
 	if err != nil {
 		return err
 	}
-	return m.Restart(ctx)
+	restartErr := m.Restart(ctx)
+	if len(failed) > 0 {
+		if restartErr != nil {
+			return fmt.Errorf("%s; %w", failed, restartErr)
+		}
+		return fmt.Errorf("configuration installed and restarted; %s", failed)
+	}
+	return restartErr
 }
 
-func (m Manager) updateLocked(ctx context.Context, ids []string) error {
+func (m Manager) updateLocked(ctx context.Context, ids []string) (string, error) {
 	s := m.Settings
 	catalog, err := subscription.Load(s.Stores, s.OverridesFile)
 	if err != nil {
-		return err
+		return "", err
 	}
 	sources := catalog.Sources()
 	for _, id := range ids {
 		i := slices.IndexFunc(sources, func(source subscription.Source) bool { return source.ID == id })
 		if i < 0 {
-			return fmt.Errorf("unknown subscription %s", id)
+			return "", fmt.Errorf("unknown subscription %s", id)
 		}
 		if sources[i].Disabled {
-			return fmt.Errorf("subscription %s is disabled; enable it first", id)
+			return "", fmt.Errorf("subscription %s is disabled; enable it first", id)
 		}
 	}
 	cache, err := s.LoadCache()
 	if err != nil {
-		return err
+		return "", err
 	}
+	health, err := s.LoadHealth()
+	if err != nil {
+		return "", err
+	}
+	var updated, stale, unavailable []string
 	converter := subscription.Converter{Binary: s.Converter}
-	now := time.Now().UTC().Format(time.RFC3339)
+	now := time.Now().UTC().Format(time.RFC3339Nano)
 	for _, source := range sources {
 		if source.Disabled || (len(ids) > 0 && !slices.Contains(ids, source.ID)) {
 			continue
@@ -66,11 +78,35 @@ func (m Manager) updateLocked(ctx context.Context, ids []string) error {
 		}
 		nodes, err := converter.Fetch(ctx, source)
 		if err != nil {
-			return err
+			health[source.ID] = SourceHealth{AttemptedAt: now, Error: err.Error()}
+			if _, ok := cache[source.ID]; !ok {
+				cache[source.ID] = CachedSource{Unavailable: true}
+			}
+			if cache[source.ID].Unavailable {
+				unavailable = append(unavailable, source.ID)
+			} else {
+				stale = append(stale, source.ID)
+			}
+			continue
 		}
+		health[source.ID] = SourceHealth{AttemptedAt: now}
 		cache[source.ID] = CachedSource{UpdatedAt: now, Nodes: nodes}
+		updated = append(updated, source.ID)
 	}
-	return m.buildAndInstall(ctx, sources, cache)
+	if err := s.WriteHealth(health); err != nil {
+		return "", err
+	}
+	summary := fmt.Sprintf("updated: %v; stale: %v; unavailable: %v", updated, stale, unavailable)
+	if len(updated) == 0 && len(stale)+len(unavailable) > 0 {
+		return "", fmt.Errorf("no subscription fetch succeeded; %s", summary)
+	}
+	if err := m.buildAndInstall(ctx, sources, cache); err != nil {
+		return "", fmt.Errorf("candidate not installed; %s: %w", summary, err)
+	}
+	if len(stale)+len(unavailable) > 0 {
+		return summary, nil
+	}
+	return "", nil
 }
 
 // Prepare renders current declared policy against cached nodes, with no network
@@ -145,8 +181,11 @@ func (m Manager) buildAndInstall(ctx context.Context, sources []subscription.Sou
 		if !ok {
 			return fmt.Errorf("subscription %s has no cached nodes; run sb update %s", source.ID, source.ID)
 		}
+		manifest.Sources = append(manifest.Sources, SourceInfo{ID: source.ID, UpdatedAt: entry.UpdatedAt, NodeCount: len(entry.Nodes), Unavailable: entry.Unavailable})
 		group := singbox.Group{Name: source.ID, Nodes: entry.Nodes}
-		if entry.UpdatedAt > manifest.UpdatedAt {
+		last, _ := time.Parse(time.RFC3339Nano, manifest.UpdatedAt)
+		updated, _ := time.Parse(time.RFC3339Nano, entry.UpdatedAt)
+		if updated.After(last) {
 			manifest.UpdatedAt = entry.UpdatedAt
 		}
 		for _, node := range entry.Nodes {
@@ -164,6 +203,18 @@ func (m Manager) buildAndInstall(ctx context.Context, sources []subscription.Sou
 		return err
 	}
 	if err := m.Validate(ctx, config); err != nil {
+		return err
+	}
+	health, err := s.LoadHealth()
+	if err != nil {
+		return err
+	}
+	for id := range health {
+		if !slices.ContainsFunc(sources, func(source subscription.Source) bool { return source.ID == id }) {
+			delete(health, id)
+		}
+	}
+	if err := s.WriteHealth(health); err != nil {
 		return err
 	}
 	return s.Install(config, retained, manifest)

@@ -22,21 +22,29 @@ type Selector struct {
 	All []string `json:"all"`
 }
 
-func (c Clash) request(ctx context.Context, method, path string, body any, result any) error {
+func (c Clash) newRequest(ctx context.Context, method, path string, body any) (*http.Request, error) {
 	var input io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		input = bytes.NewReader(data)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(c.URL, "/")+path, input)
 	if err != nil {
-		return fmt.Errorf("invalid Clash API URL")
+		return nil, fmt.Errorf("invalid Clash API URL")
 	}
 	if input != nil {
 		req.Header.Set("Content-Type", "application/json")
+	}
+	return req, nil
+}
+
+func (c Clash) request(ctx context.Context, method, path string, body any, result any) error {
+	req, err := c.newRequest(ctx, method, path, body)
+	if err != nil {
+		return err
 	}
 	client := c.Client
 	if client == nil {

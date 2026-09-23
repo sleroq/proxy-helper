@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"slices"
 )
 
 // Outbound preserves unknown protocol fields and exact JSON numbers.
@@ -36,6 +37,73 @@ type Options struct {
 	RoutingMark uint
 }
 
+type outboundSet struct {
+	nodes     []Outbound
+	tags      map[string]bool
+	leaves    []string
+	automatic []string
+	groupTags []string
+}
+
+func (set *outboundSet) add(node Outbound) error {
+	tag := node.String("tag")
+	if tag == "" || set.tags[tag] {
+		return fmt.Errorf("empty, duplicate, or reserved outbound tag %q", tag)
+	}
+	set.tags[tag] = true
+	set.leaves = append(set.leaves, tag)
+	set.nodes = append(set.nodes, node)
+	return nil
+}
+
+func (set *outboundSet) addLeaves(groups []Group, extra []Outbound) error {
+	for _, group := range groups {
+		for _, node := range group.Nodes {
+			if err := set.add(node); err != nil {
+				return err
+			}
+		}
+	}
+	for _, node := range extra {
+		if err := set.add(node); err != nil {
+			return err
+		}
+		set.automatic = append(set.automatic, node.String("tag"))
+	}
+	return nil
+}
+
+func (set *outboundSet) addGroup(group Group, options Options) error {
+	if len(group.Automatic) == 0 {
+		return nil
+	}
+	tag := "auto-" + group.Name
+	if set.tags[tag] {
+		return fmt.Errorf("source group tag collision %q", tag)
+	}
+	set.tags[tag] = true
+	membership := map[string]bool{}
+	for _, node := range group.Nodes {
+		membership[node.String("tag")] = true
+	}
+	for _, candidate := range group.Automatic {
+		if !membership[candidate] {
+			return fmt.Errorf("automatic candidate is not a source node")
+		}
+	}
+	set.nodes = append(set.nodes, urltest(tag, group.Automatic, options))
+	set.groupTags = append(set.groupTags, tag)
+	set.automatic = append(set.automatic, group.Automatic...)
+	return nil
+}
+
+func urltest(tag string, candidates []string, options Options) Outbound {
+	return Outbound{
+		"type": field("urltest"), "tag": field(tag), "outbounds": field(candidates),
+		"url": field(options.URL), "interval": field(options.Interval), "tolerance": field(options.Tolerance),
+	}
+}
+
 // Compose replaces only outbounds. Empty automatic groups are omitted; if all
 // candidates are excluded, the selector remains usable manually.
 func Compose(template json.RawMessage, groups []Group, extra []Outbound, options Options) (json.RawMessage, error) {
@@ -43,75 +111,33 @@ func Compose(template json.RawMessage, groups []Group, extra []Outbound, options
 	if err := json.Unmarshal(template, &root); err != nil || root == nil {
 		return nil, fmt.Errorf("template must be a JSON object")
 	}
-	var nodes []Outbound
-	tags := map[string]bool{"direct": true, "auto": true, "proxy": true}
-	var leaves, automatic, sourceGroups []string
-	add := func(node Outbound) error {
-		tag := node.String("tag")
-		if tag == "" || tags[tag] {
-			return fmt.Errorf("empty, duplicate, or reserved outbound tag %q", tag)
-		}
-		tags[tag] = true
-		leaves = append(leaves, tag)
-		nodes = append(nodes, node)
-		return nil
+
+	set := outboundSet{tags: map[string]bool{"direct": true, "auto": true, "proxy": true}}
+	if err := set.addLeaves(groups, extra); err != nil {
+		return nil, err
 	}
+
 	for _, group := range groups {
-		for _, node := range group.Nodes {
-			if err := add(node); err != nil {
-				return nil, err
-			}
-		}
-	}
-	for _, node := range extra {
-		if err := add(node); err != nil {
+		if err := set.addGroup(group, options); err != nil {
 			return nil, err
 		}
-		automatic = append(automatic, node.String("tag"))
 	}
-	urltest := func(tag string, candidates []string) Outbound {
-		return Outbound{
-			"type": field("urltest"), "tag": field(tag), "outbounds": field(candidates),
-			"url": field(options.URL), "interval": field(options.Interval), "tolerance": field(options.Tolerance),
-		}
-	}
-	for _, group := range groups {
-		if len(group.Automatic) == 0 {
-			continue
-		}
-		tag := "auto-" + group.Name
-		if tags[tag] {
-			return nil, fmt.Errorf("source group tag collision %q", tag)
-		}
-		tags[tag] = true
-		membership := map[string]bool{}
-		for _, node := range group.Nodes {
-			membership[node.String("tag")] = true
-		}
-		for _, candidate := range group.Automatic {
-			if !membership[candidate] {
-				return nil, fmt.Errorf("automatic candidate is not a source node")
-			}
-		}
-		nodes = append(nodes, urltest(tag, group.Automatic))
-		sourceGroups = append(sourceGroups, tag)
-		automatic = append(automatic, group.Automatic...)
-	}
-	choices := append(sourceGroups, leaves...)
-	if len(automatic) > 0 {
-		nodes = append(nodes, urltest("auto", automatic))
+	choices := slices.Concat(set.groupTags, set.leaves)
+	if len(set.automatic) > 0 {
+		set.nodes = append(set.nodes, urltest("auto", set.automatic, options))
 		choices = append([]string{"auto"}, choices...)
 	}
 	if len(choices) == 0 {
 		return nil, fmt.Errorf("no selectable outbounds; keep at least one enabled subscription or extra outbound")
 	}
+
 	selector := Outbound{
 		"type": field("selector"), "tag": field("proxy"),
 		"outbounds": field(choices), "default": field(choices[0]),
 	}
 	direct := Outbound{"type": field("direct"), "tag": field("direct")}
-	nodes = append(nodes, selector, direct)
-	return install(root, nodes, options.RoutingMark)
+	set.nodes = append(set.nodes, selector, direct)
+	return install(root, set.nodes, options.RoutingMark)
 }
 
 // Legacy installs an explicitly managed complete outbound array.

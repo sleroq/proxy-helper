@@ -44,7 +44,11 @@ func DefaultConfig() (string, error) {
 }
 
 func LoadSettings(path string) (Settings, error) {
-	s := Settings{APIURL: "http://127.0.0.1:9090", TestURL: "https://www.gstatic.com/generate_204", TestInterval: "5m", Tolerance: 50, SingBox: "sing-box", Converter: "sing-box-sub", ExcludeProtocols: "ssr"}
+	s := Settings{
+		APIURL: "http://127.0.0.1:9090", TestURL: "https://www.gstatic.com/generate_204",
+		TestInterval: "5m", Tolerance: 50, SingBox: "sing-box",
+		Converter: "sing-box-sub", ExcludeProtocols: "ssr",
+	}
 	if err := files.Read(path, &s); err != nil {
 		return s, err
 	}
@@ -82,8 +86,19 @@ func Init(path string) error {
 		return err
 	}
 	base := filepath.Dir(path)
-	s := Settings{TemplateFile: "template.json", StateDir: "state", APIURL: "http://127.0.0.1:9090", TestURL: "https://www.gstatic.com/generate_204", TestInterval: "5m", Tolerance: 50, SingBox: "sing-box", Converter: "sing-box-sub", ExcludeProtocols: "ssr", Stores: []subscription.Store{{Name: "local", Path: "subscriptions.json", Writable: true}}, OverridesFile: "overrides.json"}
-	template := json.RawMessage(`{"log":{"level":"warn"},"inbounds":[{"type":"mixed","listen":"127.0.0.1","listen_port":2080}],"route":{"final":"proxy"},"experimental":{"clash_api":{"external_controller":"127.0.0.1:9090"}}}`)
+	s := Settings{
+		TemplateFile: "template.json", StateDir: "state", APIURL: "http://127.0.0.1:9090",
+		TestURL: "https://www.gstatic.com/generate_204", TestInterval: "5m", Tolerance: 50,
+		SingBox: "sing-box", Converter: "sing-box-sub", ExcludeProtocols: "ssr",
+		Stores:        []subscription.Store{{Name: "local", Path: "subscriptions.json", Writable: true}},
+		OverridesFile: "overrides.json",
+	}
+	template := json.RawMessage(`{
+		"log":{"level":"warn"},
+		"inbounds":[{"type":"mixed","listen":"127.0.0.1","listen_port":2080}],
+		"route":{"final":"proxy"},
+		"experimental":{"clash_api":{"external_controller":"127.0.0.1:9090"}}
+	}`)
 	if _, err := os.Stat(filepath.Join(base, "template.json")); err == nil {
 		return fmt.Errorf("template.json already exists")
 	} else if !os.IsNotExist(err) {

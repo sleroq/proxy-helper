@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -41,12 +42,16 @@ Store/policy edits are staged; run sb apply or sb update to activate them.
 `
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	if err := run(ctx, os.Args[1:]); err != nil {
+	if err := runWithSignals(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "sb:", err)
 		os.Exit(1)
 	}
+}
+
+func runWithSignals(args []string) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return run(ctx, args)
 }
 
 func run(ctx context.Context, args []string) error {
@@ -54,7 +59,7 @@ func run(ctx context.Context, args []string) error {
 	path := global.String("config", "", "configuration path")
 	global.Usage = func() { fmt.Fprint(os.Stderr, usage) }
 	if err := global.Parse(args); err != nil {
-		if err == flag.ErrHelp {
+		if errors.Is(err, flag.ErrHelp) {
 			return nil
 		}
 		return err
@@ -81,9 +86,29 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	return execute(ctx, settings, args)
+}
+
+func execute(ctx context.Context, settings app.Settings, args []string) error {
 	manager := app.Manager{Settings: settings}
 	api := singbox.Clash{URL: settings.APIURL}
 	command, rest := args[0], args[1:]
+	switch command {
+	case "update", "subscription", "prepare", "apply":
+		return mutate(ctx, manager, command, rest)
+	case "use", "test", "config", "check":
+		return clientCommand(ctx, manager, api, command, rest)
+	case "list", "status":
+		if len(rest) != 0 {
+			return fmt.Errorf("%s takes no arguments", command)
+		}
+		return inspect(ctx, manager, api, command)
+	default:
+		return fmt.Errorf("unknown command %q; run sb help", command)
+	}
+}
+
+func mutate(ctx context.Context, manager app.Manager, command string, rest []string) error {
 	switch command {
 	case "update":
 		return manager.Update(ctx, rest)
@@ -100,6 +125,13 @@ func run(ctx context.Context, args []string) error {
 			return manager.Restart(ctx)
 		}
 		return nil
+	default:
+		return fmt.Errorf("unknown mutation %q", command)
+	}
+}
+
+func clientCommand(ctx context.Context, manager app.Manager, api singbox.Clash, command string, rest []string) error {
+	switch command {
 	case "use":
 		if len(rest) != 1 {
 			return fmt.Errorf("use requires exactly one tag")
@@ -110,146 +142,175 @@ func run(ctx context.Context, args []string) error {
 		fmt.Println("selected", rest[0])
 		return nil
 	case "test":
-		if len(rest) > 1 {
-			return fmt.Errorf("test accepts at most one group")
-		}
-		group := "auto"
-		if len(rest) == 1 {
-			group = rest[0]
-		}
-		results, err := api.Test(ctx, group, settings.TestURL)
-		if err != nil {
-			return err
-		}
-		tags := make([]string, 0, len(results))
-		for tag := range results {
-			tags = append(tags, tag)
-		}
-		slices.SortFunc(tags, func(a, b string) int {
-			if results[a] != results[b] {
-				return results[a] - results[b]
-			}
-			if a < b {
-				return -1
-			}
-			if a > b {
-				return 1
-			}
-			return 0
-		})
-		for _, tag := range tags {
-			fmt.Printf("%d ms\t%s\n", results[tag], tag)
-		}
-		return nil
+		return test(ctx, api, manager.Settings.TestURL, rest)
 	case "config":
-		if len(rest) > 1 || (len(rest) == 1 && rest[0] != "--raw") {
-			return fmt.Errorf("usage: sb config [--raw]")
-		}
-		data, err := manager.Config(len(rest) == 1)
-		if err != nil {
-			return err
-		}
-		fmt.Println(string(data))
-		return nil
+		return config(manager, rest)
 	case "check":
 		if len(rest) != 0 {
 			return fmt.Errorf("check takes no arguments")
 		}
-		child := exec.CommandContext(ctx, settings.SingBox, "check", "-c", settings.ConfigPath())
+		child := exec.CommandContext(ctx, manager.Settings.SingBox, "check", "-c", manager.Settings.ConfigPath())
 		child.Stdout = os.Stdout
 		child.Stderr = os.Stderr
 		return child.Run()
-	case "list", "status":
-		if len(rest) != 0 {
-			return fmt.Errorf("%s takes no arguments", command)
-		}
-		manifest, err := manager.Manifest()
-		if err != nil && !os.IsNotExist(err) {
-			return err
-		}
-		if command == "status" {
-			health, healthErr := settings.LoadHealth()
-			if healthErr != nil {
-				return healthErr
-			}
-			if os.IsNotExist(err) {
-				fmt.Println("subscription has not been updated")
-			} else {
-				fmt.Println("last update:", manifest.UpdatedAt)
-				fmt.Println("nodes:", len(manifest.Nodes))
-			}
-			installed := map[string]app.SourceInfo{}
-			for _, source := range manifest.Sources {
-				installed[source.ID] = source
-			}
-			// A manifest from an older sb has nodes but no per-source summary.
-			if len(manifest.Sources) == 0 {
-				for _, node := range manifest.Nodes {
-					source := installed[node.Source]
-					source.ID = node.Source
-					source.NodeCount++
-					installed[node.Source] = source
-				}
-			}
-			ids := make([]string, 0, len(installed)+len(health))
-			for id := range installed {
-				ids = append(ids, id)
-			}
-			for id := range health {
-				if _, ok := installed[id]; !ok {
-					ids = append(ids, id)
-				}
-			}
-			slices.Sort(ids)
-			for _, id := range ids {
-				source, installedOK := installed[id]
-				attempt := health[id]
-				state := "successful"
-				switch {
-				case attempt.Error != "" && (!installedOK || source.Unavailable):
-					state = "unavailable"
-				case attempt.Error != "":
-					state = "stale"
-				case attempt.AttemptedAt != "" && attempt.AttemptedAt != source.UpdatedAt:
-					state = "fetched, not installed"
-				case source.Unavailable:
-					state = "unavailable"
-				case !installedOK:
-					state = "not installed"
-				}
-				fmt.Printf("  %s: %s, nodes: %d, installed success: %s, last attempt: %s", id, state, source.NodeCount, source.UpdatedAt, attempt.AttemptedAt)
-				if attempt.Error != "" {
-					fmt.Printf(", failed: %s", attempt.Error)
-				}
-				fmt.Println()
-			}
-		}
-		selected, err := api.Selector(ctx)
-		if err != nil {
-			return err
-		}
-		if command == "status" {
-			fmt.Println("selected:", selected.Now)
-			return nil
-		}
-		sources := map[string]string{}
-		for _, node := range manifest.Nodes {
-			sources[node.Tag] = node.Source
-		}
-		for _, tag := range selected.All {
-			marker := "  "
-			if tag == selected.Now {
-				marker = "* "
-			}
-			suffix := ""
-			if sources[tag] != "" {
-				suffix = " [" + sources[tag] + "]"
-			}
-			fmt.Println(marker + tag + suffix)
-		}
-		return nil
 	default:
-		return fmt.Errorf("unknown command %q; run sb help", command)
+		return fmt.Errorf("unknown client command %q", command)
+	}
+}
+
+func test(ctx context.Context, api singbox.Clash, testURL string, args []string) error {
+	if len(args) > 1 {
+		return fmt.Errorf("test accepts at most one group")
+	}
+	group := "auto"
+	if len(args) == 1 {
+		group = args[0]
+	}
+	results, err := api.Test(ctx, group, testURL)
+	if err != nil {
+		return err
+	}
+	tags := make([]string, 0, len(results))
+	for tag := range results {
+		tags = append(tags, tag)
+	}
+	slices.SortFunc(tags, func(a, b string) int {
+		if results[a] != results[b] {
+			return results[a] - results[b]
+		}
+		if a < b {
+			return -1
+		}
+		if a > b {
+			return 1
+		}
+		return 0
+	})
+	for _, tag := range tags {
+		fmt.Printf("%d ms\t%s\n", results[tag], tag)
+	}
+	return nil
+}
+
+func config(manager app.Manager, args []string) error {
+	if len(args) > 1 || (len(args) == 1 && args[0] != "--raw") {
+		return fmt.Errorf("usage: sb config [--raw]")
+	}
+	data, err := manager.Config(len(args) == 1)
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(data))
+	return nil
+}
+
+func inspect(ctx context.Context, manager app.Manager, api singbox.Clash, command string) error {
+	manifest, err := manager.Manifest()
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if command == "status" {
+		if err := status(manager.Settings, manifest, os.IsNotExist(err)); err != nil {
+			return err
+		}
+	}
+	selected, err := api.Selector(ctx)
+	if err != nil {
+		return err
+	}
+	if command == "status" {
+		fmt.Println("selected:", selected.Now)
+		return nil
+	}
+	printSelection(manifest, selected)
+	return nil
+}
+
+func printSelection(manifest app.Manifest, selected singbox.Selector) {
+	sources := map[string]string{}
+	for _, node := range manifest.Nodes {
+		sources[node.Tag] = node.Source
+	}
+	for _, tag := range selected.All {
+		marker := "  "
+		if tag == selected.Now {
+			marker = "* "
+		}
+		suffix := ""
+		if sources[tag] != "" {
+			suffix = " [" + sources[tag] + "]"
+		}
+		fmt.Println(marker + tag + suffix)
+	}
+}
+
+func status(settings app.Settings, manifest app.Manifest, missing bool) error {
+	health, err := settings.LoadHealth()
+	if err != nil {
+		return err
+	}
+	if missing {
+		fmt.Println("subscription has not been updated")
+	} else {
+		fmt.Println("last update:", manifest.UpdatedAt)
+		fmt.Println("nodes:", len(manifest.Nodes))
+	}
+	installed := installedSources(manifest)
+	ids := make([]string, 0, len(installed)+len(health))
+	for id := range installed {
+		ids = append(ids, id)
+	}
+	for id := range health {
+		if _, ok := installed[id]; !ok {
+			ids = append(ids, id)
+		}
+	}
+	slices.Sort(ids)
+	for _, id := range ids {
+		source, installedOK := installed[id]
+		attempt := health[id]
+		state := sourceState(source, attempt, installedOK)
+		fmt.Printf("  %s: %s, nodes: %d, installed success: %s, last attempt: %s",
+			id, state, source.NodeCount, source.UpdatedAt, attempt.AttemptedAt)
+		if attempt.Error != "" {
+			fmt.Printf(", failed: %s", attempt.Error)
+		}
+		fmt.Println()
+	}
+	return nil
+}
+
+func installedSources(manifest app.Manifest) map[string]app.SourceInfo {
+	installed := map[string]app.SourceInfo{}
+	for _, source := range manifest.Sources {
+		installed[source.ID] = source
+	}
+	// A manifest from an older sb has nodes but no per-source summary.
+	if len(manifest.Sources) == 0 {
+		for _, node := range manifest.Nodes {
+			source := installed[node.Source]
+			source.ID = node.Source
+			source.NodeCount++
+			installed[node.Source] = source
+		}
+	}
+	return installed
+}
+
+func sourceState(source app.SourceInfo, attempt app.SourceHealth, installed bool) string {
+	switch {
+	case attempt.Error != "" && (!installed || source.Unavailable):
+		return "unavailable"
+	case attempt.Error != "":
+		return "stale"
+	case attempt.AttemptedAt != "" && attempt.AttemptedAt != source.UpdatedAt:
+		return "fetched, not installed"
+	case source.Unavailable:
+		return "unavailable"
+	case !installed:
+		return "not installed"
+	default:
+		return "successful"
 	}
 }
 
@@ -267,75 +328,86 @@ func subscriptions(ctx context.Context, m app.Manager, args []string) error {
 		return m.Update(ctx, rest)
 	}
 	if command == "list" {
-		if len(rest) != 0 {
-			return fmt.Errorf("subscription list takes no arguments")
-		}
-		catalog, err := subscription.Load(m.Settings.Stores, m.Settings.OverridesFile)
-		if err != nil {
-			return err
-		}
-		for _, source := range catalog.Sources() {
-			state := "enabled"
-			if source.Disabled {
-				state = "disabled"
-			}
-			automatic := "auto"
-			if source.Auto != nil && !*source.Auto {
-				automatic = "manual"
-			}
-			fmt.Printf("%s\t%s\t%s\n", source.ID, state, automatic)
-		}
-		return nil
+		return listSubscriptions(m, rest)
 	}
-	err := m.Edit(func(c *subscription.Catalog) error {
-		switch command {
-		case "add":
-			flags := flag.NewFlagSet("subscription add", flag.ContinueOnError)
-			store := flags.String("store", "", "writable store")
-			if err := flags.Parse(rest); err != nil {
-				return err
-			}
-			if flags.NArg() != 0 {
-				return fmt.Errorf("add reads source JSON from stdin, not arguments")
-			}
-			var source subscription.Source
-			decoder := json.NewDecoder(os.Stdin)
-			decoder.DisallowUnknownFields()
-			if err := decoder.Decode(&source); err != nil {
-				return fmt.Errorf("invalid source JSON on stdin")
-			}
-			var trailing any
-			if err := decoder.Decode(&trailing); err != io.EOF {
-				return fmt.Errorf("expected exactly one source JSON object")
-			}
-			return c.Put(source, *store, false)
-		case "delete", "enable", "disable", "reset":
-			if len(rest) != 1 {
-				return fmt.Errorf("%s requires exactly one subscription ID", command)
-			}
-			switch command {
-			case "delete":
-				return c.Delete(rest[0])
-			case "reset":
-				return c.Reset(rest[0])
-			default:
-				return c.SetEnabled(rest[0], command == "enable")
-			}
-		case "auto":
-			return automatic(c, rest)
-		default:
-			return fmt.Errorf("unknown subscription command %q", command)
-		}
-	})
+	err := m.Edit(func(c *subscription.Catalog) error { return editSubscription(c, command, rest) })
 	if err == nil {
 		fmt.Println("saved; run sb apply (cached) or sb update (fetch) to activate")
 	}
 	return err
 }
 
+func editSubscription(c *subscription.Catalog, command string, args []string) error {
+	switch command {
+	case "add":
+		return addSubscription(c, args)
+	case "delete", "enable", "disable", "reset":
+		if len(args) != 1 {
+			return fmt.Errorf("%s requires exactly one subscription ID", command)
+		}
+		switch command {
+		case "delete":
+			return c.Delete(args[0])
+		case "reset":
+			return c.Reset(args[0])
+		default:
+			return c.SetEnabled(args[0], command == "enable")
+		}
+	case "auto":
+		return automatic(c, args)
+	default:
+		return fmt.Errorf("unknown subscription command %q", command)
+	}
+}
+
+func listSubscriptions(m app.Manager, args []string) error {
+	if len(args) != 0 {
+		return fmt.Errorf("subscription list takes no arguments")
+	}
+	catalog, err := subscription.Load(m.Settings.Stores, m.Settings.OverridesFile)
+	if err != nil {
+		return err
+	}
+	for _, source := range catalog.Sources() {
+		state := "enabled"
+		if source.Disabled {
+			state = "disabled"
+		}
+		automatic := "auto"
+		if source.Auto != nil && !*source.Auto {
+			automatic = "manual"
+		}
+		fmt.Printf("%s\t%s\t%s\n", source.ID, state, automatic)
+	}
+	return nil
+}
+
+func addSubscription(c *subscription.Catalog, args []string) error {
+	flags := flag.NewFlagSet("subscription add", flag.ContinueOnError)
+	store := flags.String("store", "", "writable store")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return fmt.Errorf("add reads source JSON from stdin, not arguments")
+	}
+	var source subscription.Source
+	decoder := json.NewDecoder(os.Stdin)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&source); err != nil {
+		return fmt.Errorf("invalid source JSON on stdin")
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return fmt.Errorf("expected exactly one source JSON object")
+	}
+	return c.Put(source, *store, false)
+}
+
 func automatic(c *subscription.Catalog, args []string) error {
 	if len(args) < 2 {
-		return fmt.Errorf("usage: sb subscription auto ID --enabled BOOL | --include-tag REGEX | --exclude-tag REGEX | --include-server REGEX | --exclude-server REGEX | --clear")
+		return fmt.Errorf("usage: sb subscription auto ID --enabled BOOL | --include-tag REGEX | " +
+			"--exclude-tag REGEX | --include-server REGEX | --exclude-server REGEX | --clear")
 	}
 	id := args[0]
 	flags := flag.NewFlagSet("subscription auto", flag.ContinueOnError)
@@ -352,28 +424,21 @@ func automatic(c *subscription.Catalog, args []string) error {
 	if flags.NArg() != 0 {
 		return fmt.Errorf("unexpected automatic selection arguments")
 	}
-	var policy subscription.Policy
-	found := false
-	for _, source := range c.Sources() {
-		if source.ID == id {
-			policy = source.Policy
-			found = true
-			break
-		}
-	}
-	if !found {
-		return fmt.Errorf("unknown subscription %s", id)
+	policy, err := currentPolicy(c, id)
+	if err != nil {
+		return err
 	}
 	if *clear {
 		policy = subscription.Policy{}
 	}
-	if *enabled != "" {
-		value, err := strconv.ParseBool(*enabled)
-		if err != nil {
-			return fmt.Errorf("enabled must be true or false")
-		}
-		policy.Auto = &value
+	if err := setAutomatic(&policy, *enabled); err != nil {
+		return err
 	}
+	applyFilters(&policy, includeTags, excludeTags, includeServers, excludeServers)
+	return c.SetPolicy(id, policy)
+}
+
+func applyFilters(policy *subscription.Policy, includeTags, excludeTags, includeServers, excludeServers patterns) {
 	if includeTags != nil {
 		policy.IncludeTags = includeTags
 	}
@@ -386,5 +451,25 @@ func automatic(c *subscription.Catalog, args []string) error {
 	if excludeServers != nil {
 		policy.ExcludeServers = excludeServers
 	}
-	return c.SetPolicy(id, policy)
+}
+
+func currentPolicy(c *subscription.Catalog, id string) (subscription.Policy, error) {
+	for _, source := range c.Sources() {
+		if source.ID == id {
+			return source.Policy, nil
+		}
+	}
+	return subscription.Policy{}, fmt.Errorf("unknown subscription %s", id)
+}
+
+func setAutomatic(policy *subscription.Policy, enabled string) error {
+	if enabled == "" {
+		return nil
+	}
+	value, err := strconv.ParseBool(enabled)
+	if err != nil {
+		return fmt.Errorf("enabled must be true or false")
+	}
+	policy.Auto = &value
+	return nil
 }

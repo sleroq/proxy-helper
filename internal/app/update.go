@@ -46,14 +46,8 @@ func (m Manager) updateLocked(ctx context.Context, ids []string) (string, error)
 		return "", err
 	}
 	sources := catalog.Sources()
-	for _, id := range ids {
-		i := slices.IndexFunc(sources, func(source subscription.Source) bool { return source.ID == id })
-		if i < 0 {
-			return "", fmt.Errorf("unknown subscription %s", id)
-		}
-		if sources[i].Disabled {
-			return "", fmt.Errorf("subscription %s is disabled; enable it first", id)
-		}
+	if err := validateRequestedSources(sources, ids); err != nil {
+		return "", err
 	}
 	cache, err := s.LoadCache()
 	if err != nil {
@@ -63,7 +57,37 @@ func (m Manager) updateLocked(ctx context.Context, ids []string) (string, error)
 	if err != nil {
 		return "", err
 	}
-	var updated, stale, unavailable []string
+	updated, stale, unavailable := s.fetchSources(ctx, sources, ids, cache, health)
+	if err := s.WriteHealth(health); err != nil {
+		return "", err
+	}
+	summary := fmt.Sprintf("updated: %v; stale: %v; unavailable: %v", updated, stale, unavailable)
+	if len(updated) == 0 && len(stale)+len(unavailable) > 0 {
+		return "", fmt.Errorf("no subscription fetch succeeded; %s", summary)
+	}
+	if err := m.buildAndInstall(ctx, sources, cache); err != nil {
+		return "", fmt.Errorf("candidate not installed; %s: %w", summary, err)
+	}
+	if len(stale)+len(unavailable) > 0 {
+		return summary, nil
+	}
+	return "", nil
+}
+
+func validateRequestedSources(sources []subscription.Source, ids []string) error {
+	for _, id := range ids {
+		i := slices.IndexFunc(sources, func(source subscription.Source) bool { return source.ID == id })
+		if i < 0 {
+			return fmt.Errorf("unknown subscription %s", id)
+		}
+		if sources[i].Disabled {
+			return fmt.Errorf("subscription %s is disabled; enable it first", id)
+		}
+	}
+	return nil
+}
+
+func (s Settings) fetchSources(ctx context.Context, sources []subscription.Source, ids []string, cache Cache, health Health) (updated, stale, unavailable []string) {
 	converter := subscription.Converter{Binary: s.Converter}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	for _, source := range sources {
@@ -93,20 +117,7 @@ func (m Manager) updateLocked(ctx context.Context, ids []string) (string, error)
 		cache[source.ID] = CachedSource{UpdatedAt: now, Nodes: nodes}
 		updated = append(updated, source.ID)
 	}
-	if err := s.WriteHealth(health); err != nil {
-		return "", err
-	}
-	summary := fmt.Sprintf("updated: %v; stale: %v; unavailable: %v", updated, stale, unavailable)
-	if len(updated) == 0 && len(stale)+len(unavailable) > 0 {
-		return "", fmt.Errorf("no subscription fetch succeeded; %s", summary)
-	}
-	if err := m.buildAndInstall(ctx, sources, cache); err != nil {
-		return "", fmt.Errorf("candidate not installed; %s: %w", summary, err)
-	}
-	if len(stale)+len(unavailable) > 0 {
-		return summary, nil
-	}
-	return "", nil
+	return updated, stale, unavailable
 }
 
 // Prepare renders current declared policy against cached nodes, with no network
@@ -153,6 +164,34 @@ func (m Manager) buildAndInstall(ctx context.Context, sources []subscription.Sou
 	if err != nil {
 		return err
 	}
+	extra, err := s.loadExtraOutbounds()
+	if err != nil {
+		return err
+	}
+	groups, retained, manifest, err := assembleManifest(sources, cache)
+	if err != nil {
+		return err
+	}
+	options := singbox.Options{
+		URL:         s.TestURL,
+		Interval:    s.TestInterval,
+		Tolerance:   s.Tolerance,
+		RoutingMark: s.RoutingMark,
+	}
+	config, err := singbox.Compose(template, groups, extra, options)
+	if err != nil {
+		return err
+	}
+	if err := m.Validate(ctx, config); err != nil {
+		return err
+	}
+	if err := s.pruneHealth(sources); err != nil {
+		return err
+	}
+	return s.Install(config, retained, manifest)
+}
+
+func (s Settings) loadExtraOutbounds() ([]singbox.Outbound, error) {
 	var extra []singbox.Outbound
 	for _, path := range []string{s.ExtraOutboundsFile, s.StaticOutboundsFile} {
 		if path == "" {
@@ -160,13 +199,30 @@ func (m Manager) buildAndInstall(ctx context.Context, sources []subscription.Sou
 		}
 		var nodes []singbox.Outbound
 		if err := files.Read(path, &nodes); err != nil {
-			return err
+			return nil, err
 		}
 		if nodes == nil {
-			return fmt.Errorf("outbounds file must contain a JSON array")
+			return nil, fmt.Errorf("outbounds file must contain a JSON array")
 		}
 		extra = append(extra, nodes...)
 	}
+	return extra, nil
+}
+
+func (s Settings) pruneHealth(sources []subscription.Source) error {
+	health, err := s.LoadHealth()
+	if err != nil {
+		return err
+	}
+	for id := range health {
+		if !slices.ContainsFunc(sources, func(source subscription.Source) bool { return source.ID == id }) {
+			delete(health, id)
+		}
+	}
+	return s.WriteHealth(health)
+}
+
+func assembleManifest(sources []subscription.Source, cache Cache) ([]singbox.Group, Cache, Manifest, error) {
 	var groups []singbox.Group
 	manifest := Manifest{Nodes: []NodeInfo{}}
 	retained := Cache{}
@@ -179,45 +235,37 @@ func (m Manager) buildAndInstall(ctx context.Context, sources []subscription.Sou
 			continue
 		}
 		if !ok {
-			return fmt.Errorf("subscription %s has no cached nodes; run sb update %s", source.ID, source.ID)
+			return nil, nil, Manifest{}, fmt.Errorf("subscription %s has no cached nodes; run sb update %s", source.ID, source.ID)
 		}
-		manifest.Sources = append(manifest.Sources, SourceInfo{ID: source.ID, UpdatedAt: entry.UpdatedAt, NodeCount: len(entry.Nodes), Unavailable: entry.Unavailable})
+
+		info := SourceInfo{
+			ID: source.ID, UpdatedAt: entry.UpdatedAt,
+			NodeCount: len(entry.Nodes), Unavailable: entry.Unavailable,
+		}
+		manifest.Sources = append(manifest.Sources, info)
+
 		group := singbox.Group{Name: source.ID, Nodes: entry.Nodes}
 		last, _ := time.Parse(time.RFC3339Nano, manifest.UpdatedAt)
 		updated, _ := time.Parse(time.RFC3339Nano, entry.UpdatedAt)
 		if updated.After(last) {
 			manifest.UpdatedAt = entry.UpdatedAt
 		}
+
 		for _, node := range entry.Nodes {
 			tag, server := node.String("tag"), node.String("server")
 			automatic := source.Allows(tag, server)
 			if automatic {
 				group.Automatic = append(group.Automatic, tag)
 			}
-			manifest.Nodes = append(manifest.Nodes, NodeInfo{Tag: tag, Type: node.String("type"), Server: server, Source: source.ID, Automatic: automatic})
+			info := NodeInfo{
+				Tag: tag, Type: node.String("type"), Server: server,
+				Source: source.ID, Automatic: automatic,
+			}
+			manifest.Nodes = append(manifest.Nodes, info)
 		}
 		groups = append(groups, group)
 	}
-	config, err := singbox.Compose(template, groups, extra, singbox.Options{URL: s.TestURL, Interval: s.TestInterval, Tolerance: s.Tolerance, RoutingMark: s.RoutingMark})
-	if err != nil {
-		return err
-	}
-	if err := m.Validate(ctx, config); err != nil {
-		return err
-	}
-	health, err := s.LoadHealth()
-	if err != nil {
-		return err
-	}
-	for id := range health {
-		if !slices.ContainsFunc(sources, func(source subscription.Source) bool { return source.ID == id }) {
-			delete(health, id)
-		}
-	}
-	if err := s.WriteHealth(health); err != nil {
-		return err
-	}
-	return s.Install(config, retained, manifest)
+	return groups, retained, manifest, nil
 }
 
 func (m Manager) Validate(ctx context.Context, config json.RawMessage) error {
@@ -234,7 +282,8 @@ func (m Manager) Validate(ctx context.Context, config json.RawMessage) error {
 		return err
 	}
 	if err := exec.CommandContext(ctx, m.Settings.SingBox, "check", "-c", f.Name()).Run(); err != nil {
-		return fmt.Errorf("sing-box rejected candidate configuration (diagnostics suppressed because they may contain credentials)")
+		return fmt.Errorf("sing-box rejected candidate configuration " +
+			"(diagnostics suppressed because they may contain credentials)")
 	}
 	return nil
 }

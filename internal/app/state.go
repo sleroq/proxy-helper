@@ -90,6 +90,10 @@ func (s Settings) LoadCache() (Cache, error) {
 	if !os.IsNotExist(err) {
 		return nil, err
 	}
+	return s.loadLegacyCache(cache)
+}
+
+func (s Settings) loadLegacyCache(cache Cache) (Cache, error) {
 	// Migrate the original shell CLI cache without fetching or copying secrets
 	// into a public file. Legacy files remain intact until a successful commit.
 	var nodes []singbox.Outbound
@@ -108,6 +112,10 @@ func (s Settings) LoadCache() (Cache, error) {
 		}
 		return nil, err
 	}
+	return attributeLegacyNodes(cache, nodes, mapping)
+}
+
+func attributeLegacyNodes(cache Cache, nodes []singbox.Outbound, mapping map[string][]string) (Cache, error) {
 	byTag := map[string]singbox.Outbound{}
 	for _, node := range nodes {
 		tag := node.String("tag")

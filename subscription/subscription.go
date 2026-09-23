@@ -90,30 +90,43 @@ type Catalog struct {
 }
 
 func Load(stores []Store, overridesFile string) (*Catalog, error) {
-	c := &Catalog{Stores: stores, Documents: make([]Document, len(stores)), Overrides: map[string]Override{}, OverridesFile: overridesFile}
+	c := &Catalog{
+		Stores:        stores,
+		Documents:     make([]Document, len(stores)),
+		Overrides:     map[string]Override{},
+		OverridesFile: overridesFile,
+	}
+	if err := c.loadStores(); err != nil {
+		return nil, err
+	}
+	if err := c.loadOverrides(); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+func (c *Catalog) loadStores() error {
 	seen := map[string]bool{}
 	names := map[string]bool{}
-	for i, store := range stores {
+	for i, store := range c.Stores {
 		if store.Name == "" || store.Path == "" || names[store.Name] {
-			return nil, fmt.Errorf("store names must be nonempty and unique and paths must be set")
+			return fmt.Errorf("store names must be nonempty and unique and paths must be set")
 		}
 		names[store.Name] = true
 		if err := files.Read(store.Path, &c.Documents[i]); err != nil && (!store.Writable || !os.IsNotExist(err)) {
-			return nil, err
+			return err
 		}
-		for _, s := range c.Documents[i].Subscriptions {
-			if err := s.Validate(); err != nil {
-				return nil, err
-			}
-			if seen[s.ID] {
-				return nil, fmt.Errorf("duplicate subscription ID %s", s.ID)
-			}
-			seen[s.ID] = true
+		if err := validateSources(c.Documents[i].Subscriptions, seen); err != nil {
+			return err
 		}
 	}
-	if overridesFile != "" {
-		if err := files.Read(overridesFile, &c.Overrides); err != nil && !os.IsNotExist(err) {
-			return nil, err
+	return nil
+}
+
+func (c *Catalog) loadOverrides() error {
+	if c.OverridesFile != "" {
+		if err := files.Read(c.OverridesFile, &c.Overrides); err != nil && !os.IsNotExist(err) {
+			return err
 		}
 	}
 	if c.Overrides == nil {
@@ -122,11 +135,24 @@ func Load(stores []Store, overridesFile string) (*Catalog, error) {
 	for _, override := range c.Overrides {
 		if override.Policy != nil {
 			if err := override.Policy.Validate(); err != nil {
-				return nil, err
+				return err
 			}
 		}
 	}
-	return c, nil
+	return nil
+}
+
+func validateSources(sources []Source, seen map[string]bool) error {
+	for _, source := range sources {
+		if err := source.Validate(); err != nil {
+			return err
+		}
+		if seen[source.ID] {
+			return fmt.Errorf("duplicate subscription ID %s", source.ID)
+		}
+		seen[source.ID] = true
+	}
+	return nil
 }
 
 func (c *Catalog) Sources() []Source {
@@ -166,33 +192,41 @@ func (c *Catalog) Put(source Source, storeName string, replace bool) error {
 	if err := source.Validate(); err != nil {
 		return err
 	}
-	i, j, err := c.location(source.ID)
 	if replace {
-		if err != nil {
-			return err
-		}
-		if !c.Stores[i].Writable {
-			return fmt.Errorf("subscription %s belongs to a read-only store", source.ID)
-		}
-		c.Documents[i].Subscriptions[j] = source
-	} else {
-		if err == nil {
-			return fmt.Errorf("duplicate subscription ID %s", source.ID)
-		}
-		i = -1
-		for k, store := range c.Stores {
-			if store.Writable && (storeName == "" || store.Name == storeName) {
-				if i >= 0 {
-					return fmt.Errorf("multiple writable stores; specify --store")
-				}
-				i = k
-			}
-		}
-		if i < 0 {
-			return fmt.Errorf("no matching writable store")
-		}
-		c.Documents[i].Subscriptions = append(c.Documents[i].Subscriptions, source)
+		return c.replace(source)
 	}
+	return c.add(source, storeName)
+}
+
+func (c *Catalog) replace(source Source) error {
+	i, j, err := c.location(source.ID)
+	if err != nil {
+		return err
+	}
+	if !c.Stores[i].Writable {
+		return fmt.Errorf("subscription %s belongs to a read-only store", source.ID)
+	}
+	c.Documents[i].Subscriptions[j] = source
+	return files.Write(c.Stores[i].Path, c.Documents[i], 0600)
+}
+
+func (c *Catalog) add(source Source, storeName string) error {
+	if _, _, err := c.location(source.ID); err == nil {
+		return fmt.Errorf("duplicate subscription ID %s", source.ID)
+	}
+	i := -1
+	for k, store := range c.Stores {
+		if store.Writable && (storeName == "" || store.Name == storeName) {
+			if i >= 0 {
+				return fmt.Errorf("multiple writable stores; specify --store")
+			}
+			i = k
+		}
+	}
+	if i < 0 {
+		return fmt.Errorf("no matching writable store")
+	}
+	c.Documents[i].Subscriptions = append(c.Documents[i].Subscriptions, source)
 	return files.Write(c.Stores[i].Path, c.Documents[i], 0600)
 }
 

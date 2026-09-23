@@ -53,6 +53,7 @@ type fixture struct {
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	f := &fixture{t: t, dir: t.TempDir(), bodies: map[string]string{}, requests: map[string]int{}, selected: "auto"}
+
 	f.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
@@ -84,6 +85,7 @@ func newFixture(t *testing.T) *fixture {
 		}
 	}))
 	t.Cleanup(f.server.Close)
+
 	f.config = map[string]any{
 		"template_file": "template.json", "state_dir": "state", "api_url": f.server.URL,
 		"sing_box": helper, "converter": helper, "overrides_file": "overrides.json",
@@ -92,8 +94,10 @@ func newFixture(t *testing.T) *fixture {
 	f.write("template.json", map[string]any{"route": map[string]any{"final": "proxy"}})
 	f.write("declared.json", map[string]any{"subscriptions": []any{f.source("one", "/one"), f.source("two", "/two")}})
 	f.write("config.json", f.config)
-	f.setBody("/one", `[{"type":"shadowsocks","tag":"a","server":"one.example","password":"secret-one","server_port":443,"future_number":9007199254740993}]`)
-	f.setBody("/two", `[{"type":"shadowsocks","tag":"b","server":"two.example","password":"secret-two","server_port":443}]`)
+	f.setBody("/one", `[{"type":"shadowsocks","tag":"a","server":"one.example",
+		"password":"secret-one","server_port":443,"future_number":9007199254740993}]`)
+	f.setBody("/two", `[{"type":"shadowsocks","tag":"b","server":"two.example",
+		"password":"secret-two","server_port":443}]`)
 	return f
 }
 
@@ -131,11 +135,45 @@ func (f *fixture) read(name string) string {
 	}
 	return string(data)
 }
-func (f *fixture) setBody(path, body string) { f.mu.Lock(); defer f.mu.Unlock(); f.bodies[path] = body }
-func (f *fixture) count(path string) int     { f.mu.Lock(); defer f.mu.Unlock(); return f.requests[path] }
+func (f *fixture) setBody(path, body string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.bodies[path] = body
+}
+
+func (f *fixture) count(path string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.requests[path]
+}
 
 func TestCLIWorkflow(t *testing.T) {
 	f := newFixture(t)
+	if !t.Run("initial update", func(t *testing.T) {
+		f.t = t
+		f.workflowUpdate(t)
+	}) {
+		return
+	}
+	if !t.Run("commands", func(t *testing.T) {
+		f.t = t
+		f.workflowCommands(t)
+	}) {
+		return
+	}
+	if !t.Run("subscription policies", func(t *testing.T) {
+		f.t = t
+		f.workflowPolicies(t)
+	}) {
+		return
+	}
+	t.Run("writable store symlink", func(t *testing.T) {
+		f.t = t
+		f.workflowSymlink(t)
+	})
+}
+
+func (f *fixture) workflowUpdate(t *testing.T) {
 	f.run("", true, "update")
 	config := f.read("state/config.json")
 	if !strings.Contains(config, "9007199254740993") || !strings.Contains(config, "auto-one") {
@@ -151,6 +189,9 @@ func TestCLIWorkflow(t *testing.T) {
 	if strings.Contains(manifest, "password") {
 		t.Fatal("public manifest contains credentials")
 	}
+}
+
+func (f *fixture) workflowCommands(t *testing.T) {
 	if output := f.run("", true, "list"); !strings.Contains(output, "a [one]") {
 		t.Fatal(output)
 	}
@@ -168,7 +209,9 @@ func TestCLIWorkflow(t *testing.T) {
 		t.Fatal(output)
 	}
 	f.run("", true, "check")
+}
 
+func (f *fixture) workflowPolicies(t *testing.T) {
 	before := f.count("/two")
 	f.run("", true, "subscription", "update", "one")
 	if f.count("/two") != before {
@@ -176,7 +219,7 @@ func TestCLIWorkflow(t *testing.T) {
 	}
 	f.run("", true, "subscription", "auto", "one", "--exclude-server", "one\\.example")
 	f.run("", true, "apply")
-	config = f.read("state/config.json")
+	config := f.read("state/config.json")
 	if strings.Contains(config, "auto-one") || !strings.Contains(config, `"tag": "a"`) {
 		t.Fatal("automatic exclusion removed manual node or retained empty group")
 	}
@@ -196,7 +239,9 @@ func TestCLIWorkflow(t *testing.T) {
 	if !strings.Contains(f.read("state/config.json"), "auto-one") {
 		t.Fatal("reset did not restore declared policy")
 	}
+}
 
+func (f *fixture) workflowSymlink(t *testing.T) {
 	// Editing a symlink replaces the target, not the link itself.
 	f.write("editable.json", map[string]any{"subscriptions": []any{}})
 	if err := os.Symlink("editable.json", filepath.Join(f.dir, "local.json")); err != nil {
@@ -248,6 +293,26 @@ func TestFailedUpdatePreservesInstalledState(t *testing.T) {
 func TestPartialAndAllFailedUpdates(t *testing.T) {
 	f := newFixture(t)
 	f.run("", true, "update")
+
+	if !t.Run("partial refresh", func(t *testing.T) {
+		f.t = t
+		f.partialRefresh(t)
+	}) {
+		return
+	}
+	if !t.Run("all failed refresh", func(t *testing.T) {
+		f.t = t
+		f.allFailedRefresh(t)
+	}) {
+		return
+	}
+	t.Run("targeted recovery and metadata", func(t *testing.T) {
+		f.t = t
+		f.targetedRecovery(t)
+	})
+}
+
+func (f *fixture) partialRefresh(t *testing.T) {
 	old := f.read("state/cache.json")
 	f.setBody("/one", `[{"type":"shadowsocks","tag":"new","server":"new.example"}]`)
 	f.mu.Lock()
@@ -256,16 +321,22 @@ func TestPartialAndAllFailedUpdates(t *testing.T) {
 	if output := f.run("", false, "update"); !strings.Contains(output, "updated: [one]; stale: [two]") {
 		t.Fatal(output)
 	}
-	if f.read("state/cache.json") == old || !strings.Contains(f.read("state/config.json"), "new.example") || !strings.Contains(f.read("state/config.json"), "two.example") {
+	if f.read("state/cache.json") == old ||
+		!strings.Contains(f.read("state/config.json"), "new.example") ||
+		!strings.Contains(f.read("state/config.json"), "two.example") {
 		t.Fatal("mixed snapshot not installed")
 	}
+}
+
+func (f *fixture) allFailedRefresh(t *testing.T) {
 	installed := f.read("state/config.json")
 	f.mu.Lock()
 	delete(f.bodies, "/one")
 	f.mu.Unlock()
 	f.config["restart_command"] = []string{helper, "restart"}
 	f.write("config.json", f.config)
-	if output := f.run("", false, "update"); strings.Contains(output, "restart failed") || !strings.Contains(output, "no subscription fetch succeeded") {
+	if output := f.run("", false, "update"); strings.Contains(output, "restart failed") ||
+		!strings.Contains(output, "no subscription fetch succeeded") {
 		t.Fatal("all-failed refresh restarted: ", output)
 	}
 	delete(f.config, "restart_command")
@@ -276,6 +347,9 @@ func TestPartialAndAllFailedUpdates(t *testing.T) {
 	if status := f.run("", true, "status"); !strings.Contains(status, "one: stale") || !strings.Contains(status, "two: stale") {
 		t.Fatal(status)
 	}
+}
+
+func (f *fixture) targetedRecovery(t *testing.T) {
 	f.setBody("/one", `[{"type":"shadowsocks","tag":"newer","server":"newer.example"}]`)
 	f.run("", true, "update", "one")
 	if status := f.run("", true, "status"); !strings.Contains(status, "two: stale") {
@@ -362,7 +436,10 @@ func TestManySourcesAndLegacyMigration(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(g.dir, "state"), 0755); err != nil {
 		t.Fatal(err)
 	}
-	g.write("state/subscription-outbounds.json", json.RawMessage(`[ {"tag":"a","type":"shadowsocks","server":"one.example"}, {"tag":"b","type":"shadowsocks","server":"two.example"} ]`))
+	g.write("state/subscription-outbounds.json", json.RawMessage(`[
+		{"tag":"a","type":"shadowsocks","server":"one.example"},
+		{"tag":"b","type":"shadowsocks","server":"two.example"}
+	]`))
 	g.write("state/subscription-sources.json", map[string]any{"one": []string{"a"}, "two": []string{"b"}})
 	g.run("", true, "prepare")
 	if g.count("/one") != 0 {
@@ -378,7 +455,9 @@ func TestUpdateBootstrapsLegacyCacheWithoutSourceMapping(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(f.dir, "state"), 0755); err != nil {
 		t.Fatal(err)
 	}
-	f.write("state/subscription-outbounds.json", json.RawMessage(`[{"tag":"old","type":"shadowsocks","server":"old.example"}]`))
+	f.write("state/subscription-outbounds.json", json.RawMessage(`[
+		{"tag":"old","type":"shadowsocks","server":"old.example"}
+	]`))
 	f.write("state/config.json", map[string]any{"existing": true})
 	previous := f.read("state/config.json")
 	if output := f.run("", false, "prepare"); !strings.Contains(output, "has no cached nodes") {

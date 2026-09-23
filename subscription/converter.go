@@ -24,17 +24,9 @@ type Converter struct {
 }
 
 func (c Converter) Fetch(ctx context.Context, source Source) ([]singbox.Outbound, error) {
-	address := source.URL
-	if source.URLFile != "" {
-		data, err := os.ReadFile(source.URLFile)
-		if err != nil {
-			return nil, fmt.Errorf("source %s: cannot read URL file", source.ID)
-		}
-		address = strings.TrimRight(string(data), "\r\n")
-	}
-	parsed, err := url.Parse(address)
-	if err != nil || parsed.Host == "" || (parsed.Scheme != "https" && parsed.Scheme != "http") || strings.ContainsAny(address, "\r\n") {
-		return nil, fmt.Errorf("source %s: invalid HTTP subscription URL", source.ID)
+	address, err := sourceAddress(source)
+	if err != nil {
+		return nil, err
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
 	if err != nil {
@@ -58,6 +50,22 @@ func (c Converter) Fetch(ctx context.Context, source Source) ([]singbox.Outbound
 	return c.Parse(ctx, response.Body, source)
 }
 
+func sourceAddress(source Source) (string, error) {
+	address := source.URL
+	if source.URLFile != "" {
+		data, err := os.ReadFile(source.URLFile)
+		if err != nil {
+			return "", fmt.Errorf("source %s: cannot read URL file", source.ID)
+		}
+		address = strings.TrimRight(string(data), "\r\n")
+	}
+	parsed, err := url.Parse(address)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "https" && parsed.Scheme != "http") || strings.ContainsAny(address, "\r\n") {
+		return "", fmt.Errorf("source %s: invalid HTTP subscription URL", source.ID)
+	}
+	return address, nil
+}
+
 // Parse converts a subscription body from any reader into native outbounds.
 // It does not fetch, read stores, or apply automatic-selection policy. The
 // source supplies only diagnostic identity and converter filter options.
@@ -69,23 +77,18 @@ func (c Converter) Parse(ctx context.Context, body io.Reader, source Source) ([]
 	defer func() { _ = os.RemoveAll(dir) }()
 	input := filepath.Join(dir, "subscription")
 	output := filepath.Join(dir, "nodes.json")
-	file, err := os.OpenFile(input, os.O_CREATE|os.O_WRONLY, 0600)
-	if err != nil {
+	if err := saveResponse(input, body, source.ID); err != nil {
 		return nil, err
-	}
-	size, copyErr := io.Copy(file, io.LimitReader(body, (8<<20)+1))
-	closeErr := file.Close()
-	if size > 8<<20 {
-		return nil, fmt.Errorf("source %s: subscription response too large", source.ID)
-	}
-	if copyErr != nil || closeErr != nil {
-		return nil, fmt.Errorf("source %s: cannot save response", source.ID)
 	}
 	protocols := source.ExcludeProtocols
 	if protocols == "" {
 		protocols = "ssr"
 	}
-	command := exec.CommandContext(ctx, c.Binary, input, "--only-nodes", "--prefix", source.Prefix, "--exclude-protocol", protocols, "--exclude-node-name", source.ExcludeNodeNames, "--out", output)
+	command := exec.CommandContext(ctx, c.Binary, input,
+		"--only-nodes", "--prefix", source.Prefix,
+		"--exclude-protocol", protocols,
+		"--exclude-node-name", source.ExcludeNodeNames,
+		"--out", output)
 	if err := command.Run(); err != nil {
 		return nil, fmt.Errorf("source %s: converter failed", source.ID)
 	}
@@ -96,13 +99,36 @@ func (c Converter) Parse(ctx context.Context, body io.Reader, source Source) ([]
 	if len(nodes) == 0 {
 		return nil, fmt.Errorf("source %s: no supported outbounds", source.ID)
 	}
+	if err := validateServers(nodes, source.ID); err != nil {
+		return nil, err
+	}
+	return nodes, nil
+}
+
+func validateServers(nodes []singbox.Outbound, id string) error {
 	for _, node := range nodes {
 		if _, ok := node["server"]; ok {
 			server := node.String("server")
 			if server == "" || server == "0.0.0.0" || server == "::" {
-				return nil, fmt.Errorf("source %s: placeholder server; check subscription", source.ID)
+				return fmt.Errorf("source %s: placeholder server; check subscription", id)
 			}
 		}
 	}
-	return nodes, nil
+	return nil
+}
+
+func saveResponse(input string, body io.Reader, id string) error {
+	file, err := os.OpenFile(input, os.O_CREATE|os.O_WRONLY, 0600)
+	if err != nil {
+		return err
+	}
+	size, copyErr := io.Copy(file, io.LimitReader(body, (8<<20)+1))
+	closeErr := file.Close()
+	if size > 8<<20 {
+		return fmt.Errorf("source %s: subscription response too large", id)
+	}
+	if copyErr != nil || closeErr != nil {
+		return fmt.Errorf("source %s: cannot save response", id)
+	}
+	return nil
 }

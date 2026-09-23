@@ -28,7 +28,9 @@ const usage = `Usage: sb [--config PATH] COMMAND
   apply                        Render from cache and restart
   list | status                Inspect running selection and public manifest
   test [GROUP]                 Test automatic group latency (default auto)
-  use TAG                      Select an outbound
+  use [TAG]                    Select live (interactive picker with no tag)
+  pin TAG                      Persist a leaf selection and select it live
+  unpin                        Restore automatic/default selection
   config [--raw] | check       Inspect or validate installed config
   subscription list
   subscription add [--store NAME]       Read a source JSON object from stdin
@@ -96,7 +98,7 @@ func execute(ctx context.Context, settings app.Settings, args []string) error {
 	switch command {
 	case "update", "subscription", "prepare", "apply":
 		return mutate(ctx, manager, command, rest)
-	case "use", "test", "config", "check":
+	case "use", "pin", "unpin", "test", "config", "check":
 		return clientCommand(ctx, manager, api, command, rest)
 	case "list", "status":
 		if len(rest) != 0 {
@@ -132,11 +134,43 @@ func mutate(ctx context.Context, manager app.Manager, command string, rest []str
 
 func clientCommand(ctx context.Context, manager app.Manager, api singbox.Clash, command string, rest []string) error {
 	switch command {
+	case "pin", "unpin":
+		if command == "pin" && len(rest) != 1 {
+			return fmt.Errorf("pin requires exactly one tag")
+		}
+		if command == "unpin" && len(rest) != 0 {
+			return fmt.Errorf("unpin takes no arguments")
+		}
+
+		tag := ""
+		if command == "pin" {
+			tag = rest[0]
+		}
+		choice, err := manager.Pin(ctx, tag)
+		if err != nil {
+			return err
+		}
+
+		if err := api.Use(ctx, choice); err != nil {
+			return fmt.Errorf("pin/config saved, but live selection could not be changed: %w", err)
+		}
+		fmt.Println("selected", choice)
+		return nil
 	case "use":
-		if len(rest) != 1 {
-			return fmt.Errorf("use requires exactly one tag")
+		if len(rest) > 1 {
+			return fmt.Errorf("use accepts at most one tag")
+		}
+		if len(rest) == 0 {
+			tag, err := pick(ctx, manager, api)
+			if err != nil || tag == "" {
+				return err
+			}
+			rest = []string{tag}
 		}
 		if err := api.Use(ctx, rest[0]); err != nil {
+			if ctx.Err() != nil {
+				return nil //nolint:nilerr // SIGINT cancels the live change without an alarming API error.
+			}
 			return err
 		}
 		fmt.Println("selected", rest[0])
@@ -219,11 +253,24 @@ func inspect(ctx context.Context, manager app.Manager, api singbox.Clash, comman
 		return err
 	}
 	if command == "status" {
+		printPin(manifest)
 		fmt.Println("selected:", selected.Now)
 		return nil
 	}
+	printPin(manifest)
 	printSelection(manifest, selected)
 	return nil
+}
+
+func printPin(manifest app.Manifest) {
+	switch {
+	case manifest.PinnedTag == "":
+		fmt.Println("pin: none")
+	case manifest.PinActive:
+		fmt.Println("pin:", manifest.PinnedTag, "(active)")
+	default:
+		fmt.Println("pin:", manifest.PinnedTag, "(stale/inactive)")
+	}
 }
 
 func printSelection(manifest app.Manifest, selected singbox.Selector) {

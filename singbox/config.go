@@ -35,6 +35,7 @@ type Options struct {
 	Interval    string
 	Tolerance   uint
 	RoutingMark uint
+	PinnedLeaf  string
 }
 
 type outboundSet struct {
@@ -131,9 +132,13 @@ func Compose(template json.RawMessage, groups []Group, extra []Outbound, options
 		return nil, fmt.Errorf("no selectable outbounds; keep at least one enabled subscription or extra outbound")
 	}
 
+	selected := choices[0]
+	if slices.Contains(set.leaves, options.PinnedLeaf) {
+		selected = options.PinnedLeaf
+	}
 	selector := Outbound{
 		"type": field("selector"), "tag": field("proxy"),
-		"outbounds": field(choices), "default": field(choices[0]),
+		"outbounds": field(choices), "default": field(selected),
 	}
 	direct := Outbound{"type": field("direct"), "tag": field("direct")}
 	set.nodes = append(set.nodes, selector, direct)

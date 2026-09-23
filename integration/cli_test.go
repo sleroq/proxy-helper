@@ -3,9 +3,11 @@
 package integration_test
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,6 +16,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
+
+	"github.com/creack/pty"
 )
 
 var binary, helper string
@@ -40,14 +45,17 @@ func TestMain(m *testing.M) {
 }
 
 type fixture struct {
-	t        *testing.T
-	dir      string
-	config   map[string]any
-	server   *httptest.Server
-	mu       sync.Mutex
-	bodies   map[string]string
-	requests map[string]int
-	selected string
+	t           *testing.T
+	dir         string
+	config      map[string]any
+	server      *httptest.Server
+	mu          sync.Mutex
+	bodies      map[string]string
+	requests    map[string]int
+	selected    string
+	blockedPath string
+	entered     chan struct{}
+	release     chan struct{}
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -56,8 +64,25 @@ func newFixture(t *testing.T) *fixture {
 
 	f.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
-		defer f.mu.Unlock()
 		f.requests[r.URL.Path]++
+		blocked := f.blockedPath == r.URL.Path && (r.URL.Path != "/proxies/proxy" || r.Method == http.MethodPut)
+		entered := f.entered
+		release := f.release
+		selected := f.selected
+		body, exists := f.bodies[r.URL.Path]
+		f.mu.Unlock()
+		if blocked {
+			select {
+			case entered <- struct{}{}:
+			case <-r.Context().Done():
+				return
+			}
+			select {
+			case <-r.Context().Done():
+			case <-release:
+			}
+			return
+		}
 		switch {
 		case r.URL.Path == "/proxies/proxy":
 			if r.Method == http.MethodPut {
@@ -68,16 +93,21 @@ func newFixture(t *testing.T) *fixture {
 					w.WriteHeader(400)
 					return
 				}
+				f.mu.Lock()
 				f.selected = body.Name
+				f.mu.Unlock()
 				w.WriteHeader(204)
 				return
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"now": f.selected, "all": []string{"auto", "a", "b"}})
+			all := []string{"auto", "a", "b"}
+			if _, err := os.Stat(filepath.Join(f.dir, "static.json")); err == nil {
+				all = append(all, "auto-custom")
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"now": selected, "all": all})
 		case strings.HasPrefix(r.URL.Path, "/group/"):
 			_ = json.NewEncoder(w).Encode(map[string]int{"a": 80, "b": 20})
 		default:
-			body, ok := f.bodies[r.URL.Path]
-			if !ok {
+			if !exists {
 				http.NotFound(w, r)
 				return
 			}
@@ -145,6 +175,195 @@ func (f *fixture) count(path string) int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.requests[path]
+}
+
+func TestUsePicker(t *testing.T) {
+	f := newFixture(t)
+	f.run("", true, "update")
+	if output := f.run("", false, "use"); !strings.Contains(output, "use requires a tag without a terminal") {
+		t.Fatal(output)
+	}
+	f.run("", true, "use", "a")
+
+	for _, tc := range []struct{ name, keys, want string }{
+		{"cancel", "\x03", "a"},
+		{"filter", "/b\r\r", "b"},
+		{"navigation", "k\r", "a"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, binary, "--config", filepath.Join(f.dir, "config.json"), "use")
+			terminal, err := pty.Start(cmd)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = terminal.Close() }()
+			output := make(chan string, 1)
+			go func() { data, _ := io.ReadAll(terminal); output <- string(data) }()
+			time.Sleep(200 * time.Millisecond)
+			if _, err := terminal.Write([]byte(tc.keys)); err != nil {
+				t.Fatal(err)
+			}
+			err = cmd.Wait()
+			if ctx.Err() != nil {
+				t.Fatal("picker did not exit promptly")
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			screen := <-output
+			if !strings.Contains(screen, "\x1b[?1049l") {
+				t.Fatalf("alternate screen not restored: %q", screen)
+			}
+			f.mu.Lock()
+			got := f.selected
+			f.mu.Unlock()
+			if got != tc.want {
+				t.Fatalf("selection = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestPickerBlockedRequests(t *testing.T) {
+	for _, tc := range []struct {
+		name, path, input string
+		signal            bool
+	}{
+		{"latency ctrl+c", "/group/auto/delay", "\x03", false},
+		{"selection SIGINT", "/proxies/proxy", "\r", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			f.run("", true, "update")
+
+			f.mu.Lock()
+			f.blockedPath, f.entered, f.release = tc.path, make(chan struct{}, 1), make(chan struct{})
+			defer close(f.release)
+			f.mu.Unlock()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, binary, "--config", filepath.Join(f.dir, "config.json"), "use")
+			terminal, err := pty.Start(cmd)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = terminal.Close() }()
+			output := make(chan string, 1)
+			go func() { data, _ := io.ReadAll(terminal); output <- string(data) }()
+
+			if tc.signal {
+				// Let the picker render before selecting its default leaf.
+				time.Sleep(150 * time.Millisecond)
+				if _, err := terminal.Write([]byte(tc.input)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			select {
+			case <-f.entered:
+			case <-ctx.Done():
+				t.Fatal("request never blocked")
+			}
+			if tc.signal {
+				if err := cmd.Process.Signal(os.Interrupt); err != nil {
+					t.Fatal(err)
+				}
+			} else if _, err := terminal.Write([]byte(tc.input)); err != nil {
+				t.Fatal(err)
+			}
+
+			err = cmd.Wait()
+			screen := <-output
+			if err != nil || ctx.Err() != nil {
+				t.Fatalf("interrupted picker: %v (context: %v): %q", err, ctx.Err(), screen)
+			}
+			if !strings.Contains(screen, "\x1b[?1049l") {
+				t.Fatalf("alternate screen not restored: %q", screen)
+			}
+			f.mu.Lock()
+			selected := f.selected
+			f.mu.Unlock()
+			if selected != "auto" {
+				t.Fatalf("selection changed to %q", selected)
+			}
+		})
+	}
+}
+
+func TestPickerAutoPrefixedExtraLeaf(t *testing.T) {
+	f := newFixture(t)
+	f.write("static.json", []any{map[string]any{
+		"type": "shadowsocks", "tag": "auto-custom", "server": "extra.example",
+		"server_port": 443, "password": "secret",
+	}})
+	f.config["static_outbounds_file"] = "static.json"
+	f.write("config.json", f.config)
+	f.run("", true, "update")
+	if public := f.read("state/subscription.json"); strings.Contains(public, "extra.example") || strings.Contains(public, "secret") {
+		t.Fatal("extra outbound details leaked into public manifest")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, binary, "--config", filepath.Join(f.dir, "config.json"), "use")
+	terminal, err := pty.Start(cmd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = terminal.Close() }()
+	output := make(chan string, 1)
+	go func() { data, _ := io.ReadAll(terminal); output <- string(data) }()
+	time.Sleep(150 * time.Millisecond)
+	_, _ = terminal.Write([]byte("/auto-custom\r\r"))
+	if err := cmd.Wait(); err != nil || ctx.Err() != nil {
+		t.Fatalf("select extra leaf: %v (context: %v)", err, ctx.Err())
+	}
+	if screen := <-output; !strings.Contains(screen, "auto-custom") {
+		t.Fatalf("leaf missing from picker: %q", screen)
+	}
+	f.mu.Lock()
+	selected := f.selected
+	f.mu.Unlock()
+	if selected != "auto-custom" {
+		t.Fatalf("selected %q", selected)
+	}
+}
+
+func TestPinPersistence(t *testing.T) {
+	f := newFixture(t)
+	f.run("", true, "update")
+	f.run("", true, "use", "b")
+	if strings.Contains(f.read("state/config.json"), `"default": "b"`) {
+		t.Fatal("use persisted")
+	}
+	f.run("", false, "pin", "auto")
+	if _, err := os.Stat(filepath.Join(f.dir, "state", "pin.json")); !os.IsNotExist(err) {
+		t.Fatal("invalid pin saved", err)
+	}
+	f.run("", true, "pin", "b")
+	if !strings.Contains(f.read("state/config.json"), `"default": "b"`) {
+		t.Fatal("pin not installed")
+	}
+	if info, err := os.Stat(filepath.Join(f.dir, "state", "pin.json")); err != nil || info.Mode().Perm() != 0600 {
+		t.Fatalf("pin permissions: %v", err)
+	}
+	f.run("", true, "prepare")
+	if !strings.Contains(f.read("state/config.json"), `"default": "b"`) {
+		t.Fatal("prepare lost pin")
+	}
+	f.run("", true, "subscription", "disable", "two")
+	f.run("", true, "apply")
+	if !strings.Contains(f.read("state/subscription.json"), `"pinnedTag": "b"`) || !strings.Contains(f.run("", true, "status"), "stale/inactive") {
+		t.Fatal("stale pin not reported")
+	}
+	if strings.Contains(f.read("state/config.json"), `"default": "b"`) {
+		t.Fatal("stale pin selected")
+	}
+	f.run("", true, "unpin")
+	if !strings.Contains(f.read("state/config.json"), `"default": "auto"`) {
+		t.Fatal("unpin did not restore default")
+	}
 }
 
 func TestCLIWorkflow(t *testing.T) {

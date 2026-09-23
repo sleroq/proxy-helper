@@ -39,17 +39,33 @@ sb subscription update main       # same as sb update main
 sb list
 sb test                           # default automatic group
 sb test auto-main
-sb use 'a node tag'
+sb use                           # live-only picker (requires stdin/stdout TTY)
+sb use 'a node tag'              # live-only, scriptable
+sb pin 'a node tag'              # persist a leaf and select it live
+sb unpin                         # restore automatic/default selection
 sb status
 sb config                         # best-effort redaction; file permissions apply
 sudo sb config --raw               # explicitly root-only
 sb check
 ```
 
-`list`, `status`, `test`, and `use` need the running Clash API. `list`/`status`
+`list`, `status`, `test`, and `use` need the running Clash API. `pin`/`unpin`
+validate and install offline without restarting, then try to change the live
+selector; if the API is unavailable, the saved configuration still takes effect
+on the next start. In the picker, `/` filters by tag, source or server;
+arrow keys or `j`/`k` move, Enter selects, Esc clears the filter or quits,
+and Ctrl+C quits immediately. Latency measurements run in the background and
+never delay opening or closing the picker. Pin intent is private
+`state_dir/pin.json` (0600), writable only by the state directory owner; rootless `use` remains available when the
+system state is root-owned. Only currently available leaf outbounds, including
+manual subscription and static/extra leaves, can be pinned. Disabled/deleted
+leaves leave a stale pin saved but fall back to the generated default. Public
+manifest and `list`/`status` show pin intent/activity separately from live
+selection. Legacy complete-outbounds mode does not support pin/unpin. `list`/`status`
 read public `subscription.json` and `health.json`, not credentials. These 0644
-files disclose source IDs, node counts, timestamps, and generic fetch failures;
-keep IDs free of secrets. A partial update installs healthy and last-good cached
+files disclose source IDs, node counts, outbound tags (including static/extra
+tags), timestamps, and generic fetch failures; extra outbound endpoints remain
+private. Keep IDs free of secrets. A partial update installs healthy and last-good cached
 sources, skips unavailable uncached sources, restarts, then exits nonzero. If no
 fetch succeeds or validation fails, the installed snapshot is unchanged; fetch
 health is still recorded. `prepare` can reuse unavailable entries when another

@@ -31,9 +31,12 @@ type SourceInfo struct {
 	Unavailable bool   `json:"unavailable"`
 }
 type Manifest struct {
-	UpdatedAt string       `json:"updatedAt"`
-	Nodes     []NodeInfo   `json:"nodes"`
-	Sources   []SourceInfo `json:"sources"`
+	UpdatedAt  string       `json:"updatedAt"`
+	Nodes      []NodeInfo   `json:"nodes"`
+	ExtraNodes []NodeInfo   `json:"extraNodes,omitempty"`
+	Sources    []SourceInfo `json:"sources"`
+	PinnedTag  string       `json:"pinnedTag,omitempty"`
+	PinActive  bool         `json:"pinActive,omitempty"`
 }
 type SourceHealth struct {
 	AttemptedAt string `json:"attemptedAt"`

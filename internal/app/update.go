@@ -159,36 +159,63 @@ func (m Manager) Prepare(ctx context.Context) error {
 }
 
 func (m Manager) buildAndInstall(ctx context.Context, sources []subscription.Source, cache Cache) error {
+	pin, err := m.Settings.loadPin()
+	if err != nil {
+		return err
+	}
+	config, retained, manifest, err := m.buildCandidate(ctx, sources, cache, pin)
+	if err != nil {
+		return err
+	}
+	if err := m.Settings.pruneHealth(sources); err != nil {
+		return err
+	}
+	return m.Settings.Install(config, retained, manifest)
+}
+
+func (m Manager) buildCandidate(ctx context.Context, sources []subscription.Source, cache Cache, pin string) (json.RawMessage, Cache, Manifest, error) {
 	s := m.Settings
 	template, err := os.ReadFile(s.TemplateFile)
 	if err != nil {
-		return err
+		return nil, nil, Manifest{}, err
 	}
 	extra, err := s.loadExtraOutbounds()
 	if err != nil {
-		return err
+		return nil, nil, Manifest{}, err
 	}
 	groups, retained, manifest, err := assembleManifest(sources, cache)
 	if err != nil {
-		return err
+		return nil, nil, Manifest{}, err
 	}
+
+	manifest.PinnedTag = pin
+	for _, group := range groups {
+		for _, node := range group.Nodes {
+			manifest.PinActive = manifest.PinActive || pin != "" && node.String("tag") == pin
+		}
+	}
+	for _, node := range extra {
+		tag := node.String("tag")
+		manifest.PinActive = manifest.PinActive || pin != "" && tag == pin
+		// The API already exposes tags; keep extra outbound endpoints private.
+		manifest.ExtraNodes = append(manifest.ExtraNodes, NodeInfo{Tag: tag, Source: "local"})
+	}
+
 	options := singbox.Options{
 		URL:         s.TestURL,
 		Interval:    s.TestInterval,
 		Tolerance:   s.Tolerance,
 		RoutingMark: s.RoutingMark,
+		PinnedLeaf:  pin,
 	}
 	config, err := singbox.Compose(template, groups, extra, options)
 	if err != nil {
-		return err
+		return nil, nil, Manifest{}, err
 	}
 	if err := m.Validate(ctx, config); err != nil {
-		return err
+		return nil, nil, Manifest{}, err
 	}
-	if err := s.pruneHealth(sources); err != nil {
-		return err
-	}
-	return s.Install(config, retained, manifest)
+	return config, retained, manifest, nil
 }
 
 func (s Settings) loadExtraOutbounds() ([]singbox.Outbound, error) {

@@ -17,7 +17,7 @@
           pname = "sb";
           version = "0.1.0";
           src = self;
-          vendorHash = null;
+          vendorHash = "sha256-m8p79jpffBdH81rabn6HFGFINeCqegeYVpC8JX6Dwvg=";
           subPackages = [ "cmd/sb" ];
           checkPhase = ''
             runHook preCheck
@@ -32,7 +32,7 @@
         };
     in
     {
-      overlays.default = final: prev: { sb = package final; };
+      overlays.default = final: _: { sb = package final; };
       packages = eachSystem (
         system:
         let

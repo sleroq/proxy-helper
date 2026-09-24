@@ -47,7 +47,7 @@ func LoadSettings(path string) (Settings, error) {
 	s := Settings{
 		APIURL: "http://127.0.0.1:9090", TestURL: "https://www.gstatic.com/generate_204",
 		TestInterval: "5m", Tolerance: 50, SingBox: "sing-box",
-		Converter: "sing-box-sub", ExcludeProtocols: "ssr",
+		ExcludeProtocols: "ssr",
 	}
 	if err := files.Read(path, &s); err != nil {
 		return s, err
@@ -89,7 +89,7 @@ func Init(path string) error {
 	s := Settings{
 		TemplateFile: "template.json", StateDir: "state", APIURL: "http://127.0.0.1:9090",
 		TestURL: "https://www.gstatic.com/generate_204", TestInterval: "5m", Tolerance: 50,
-		SingBox: "sing-box", Converter: "sing-box-sub", ExcludeProtocols: "ssr",
+		SingBox: "sing-box", ExcludeProtocols: "ssr",
 		Stores:        []subscription.Store{{Name: "local", Path: "subscriptions.json", Writable: true}},
 		OverridesFile: "overrides.json",
 	}

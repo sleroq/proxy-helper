@@ -1,13 +1,13 @@
 # sb
 
 A small Go CLI for subscription management and sing-box control on Linux and
-macOS. It is not a proxy, service supervisor, or replacement subscription parser.
-The initial parser adapter uses `sing-box-sub` (rainbend/sing-box-subscribe-cli
-v1.0.4); native configuration validation uses your installed `sing-box`.
+macOS. It is not a proxy or service supervisor. The default subscription parser is native Go;
+set `converter` to `sing-box-sub` to opt into the legacy adapter during migration.
+Configuration validation uses your installed `sing-box`.
 
 ## Standalone setup
 
-Install Go 1.26+, sing-box, and the converter (named `sing-box-sub` on PATH), then:
+Install Go 1.26+ and sing-box, then:
 
 ```sh
 go install ./cmd/sb
@@ -88,7 +88,7 @@ Example non-secret CLI configuration:
   "state_dir": "state",
   "api_url": "http://127.0.0.1:9090",
   "sing_box": "sing-box",
-  "converter": "sing-box-sub",
+  "converter": "",
   "stores": [
     {"name":"declared", "path":"/run/agenix/sb-subscriptions", "writable":false},
     {"name":"local", "path":"subscriptions.json", "writable":true}
@@ -115,6 +115,13 @@ Each store has the same schema:
 }
 ```
 
+- The native parser accepts plain or base64-encoded URI lists containing `ss`,
+  `trojan`, `vless`, and base64-JSON `vmess` links. It supports basic TCP, WebSocket,
+  gRPC, TLS and Reality parameters; Clash YAML, SSR, Hysteria, TUIC, and other
+  transports are not supported. For providers requiring these, explicitly set
+  `converter` to the installed `sing-box-sub` binary until verified parity.
+  Malformed/unsupported lines are skipped; an entirely unusable source keeps its
+  last-good cache. Source name/protocol exclusions apply before composition.
 - IDs match `[A-Za-z0-9_-]+` and must be unique across stores. Outbound tags must
   also be unique; use prefixes when providers reuse names. Duplicate store names
   are rejected. A missing writable store is initially empty; missing read-only

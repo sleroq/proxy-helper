@@ -88,6 +88,7 @@ func validateRequestedSources(sources []subscription.Source, ids []string) error
 }
 
 func (s Settings) fetchSources(ctx context.Context, sources []subscription.Source, ids []string, cache Cache, health Health) (updated, stale, unavailable []string) {
+	native := subscription.Native{}
 	converter := subscription.Converter{Binary: s.Converter}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	for _, source := range sources {
@@ -100,7 +101,13 @@ func (s Settings) fetchSources(ctx context.Context, sources []subscription.Sourc
 		if source.ExcludeNodeNames == "" {
 			source.ExcludeNodeNames = s.ExcludeNodeNames
 		}
-		nodes, err := converter.Fetch(ctx, source)
+		var nodes []singbox.Outbound
+		var err error
+		if s.Converter != "" {
+			nodes, err = converter.Fetch(ctx, source)
+		} else {
+			nodes, err = native.Fetch(ctx, source)
+		}
 		if err != nil {
 			health[source.ID] = SourceHealth{AttemptedAt: now, Error: err.Error()}
 			if _, ok := cache[source.ID]; !ok {

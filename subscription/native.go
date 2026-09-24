@@ -52,7 +52,7 @@ func (n Native) Fetch(ctx context.Context, source Source) ([]singbox.Outbound, e
 	if err != nil {
 		return nil, fmt.Errorf("source %s: fetch failed", source.ID)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return nil, fmt.Errorf("source %s: HTTP %d", source.ID, response.StatusCode)
 	}
@@ -98,12 +98,12 @@ func (Native) Parse(body io.Reader, source Source) ([]singbox.Outbound, error) {
 		}
 	}
 	protocols := map[string]bool{}
-	for _, p := range strings.Split(source.ExcludeProtocols, ",") {
+	for p := range strings.SplitSeq(source.ExcludeProtocols, ",") {
 		protocols[strings.ToLower(strings.TrimSpace(p))] = true
 	}
 	nodes := []singbox.Outbound{}
 	tags := map[string]bool{}
-	for _, line := range strings.Split(text, "\n") {
+	for line := range strings.SplitSeq(text, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
@@ -131,6 +131,16 @@ func (Native) Parse(body io.Reader, source Source) ([]singbox.Outbound, error) {
 }
 
 func nativeLine(line string) (singbox.Outbound, string, error) {
+	if strings.HasPrefix(strings.ToLower(line), "ss://") {
+		payload := line[5:]
+		encoded, _, _ := strings.Cut(payload, "#")
+		encoded, _, _ = strings.Cut(encoded, "?")
+		if !strings.Contains(encoded, "@") {
+			if decoded, err := nativeDecode(encoded); err == nil {
+				line = "ss://" + string(decoded) + line[5+len(encoded):]
+			}
+		}
+	}
 	u, err := url.Parse(line)
 	if err != nil {
 		return nil, "", err
@@ -260,10 +270,16 @@ func nativeLine(line string) (singbox.Outbound, string, error) {
 		nativeField(node, "server_port", port)
 		q := u.Query()
 		if kind != "ss" {
+			if network := q.Get("type"); network != "" && network != "tcp" && network != "ws" && network != "grpc" {
+				return nil, "", fmt.Errorf("unsupported transport")
+			}
 			nativeTransport(node, q.Get("type"), q.Get("host"), q.Get("path"))
 			security := q.Get("security")
 			if kind == "trojan" && security == "" {
 				security = "tls"
+			}
+			if security != "" && security != "none" && security != "tls" && security != "reality" {
+				return nil, "", fmt.Errorf("unsupported security")
 			}
 			if security == "tls" || security == "reality" {
 				tls := map[string]any{"enabled": true}

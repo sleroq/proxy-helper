@@ -51,71 +51,87 @@ func (m picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Tick(120*time.Millisecond, func(time.Time) tea.Msg { return pulseMsg{} })
 		}
 	case tea.KeyPressMsg:
-		key := v.String()
-		if key == "ctrl+c" {
+		return m.keyPress(v)
+	}
+	return m, nil
+}
+func (m picker) keyPress(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	key := v.String()
+	if key == "ctrl+c" {
+		return m, tea.Quit
+	}
+	if m.searching {
+		return m.searchKey(v)
+	}
+	return m.navigationKey(key)
+}
+
+func (m picker) searchKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch v.String() {
+	case "esc":
+		m.searching = false
+		if m.filter == "" {
 			return m, tea.Quit
 		}
-
-		if m.searching {
-			switch key {
-			case "esc":
-				m.searching = false
-				if m.filter != "" {
-					m.filter = ""
-					m.refilter()
-					return m, nil
-				}
-				return m, tea.Quit
-			case "enter":
-				m.searching = false
-			case "backspace":
-				r := []rune(m.filter)
-				if len(r) > 0 {
-					m.filter = string(r[:len(r)-1])
-					m.refilter()
-				}
-			case "ctrl+u":
-				m.filter = ""
-				m.refilter()
-			default:
-				if v.Key().Text != "" {
-					m.filter += safeText(v.Key().Text)
-					m.refilter()
-				}
-			}
-			return m, nil
-		}
-
-		switch key {
-		case "esc":
-			if m.filter != "" {
-				m.filter = ""
-				m.refilter()
-				return m, nil
-			}
-			return m, tea.Quit
-		case "/":
-			m.searching = true
-		case "j", "down":
-			m.move(1)
-		case "k", "up":
-			m.move(-1)
-		case "pgdown":
-			m.move(m.pageSize())
-		case "pgup":
-			m.move(-m.pageSize())
-		case "ctrl+u":
-			m.filter = ""
+		m.filter = ""
+		m.refilter()
+	case "enter":
+		m.searching = false
+	case "backspace":
+		r := []rune(m.filter)
+		if len(r) > 0 {
+			m.filter = string(r[:len(r)-1])
 			m.refilter()
-		case "enter":
-			if len(m.visible) > 0 {
-				m.choice = m.rows[m.visible[m.cursor]].tag
-				return m, tea.Quit
-			}
+		}
+	case "ctrl+u":
+		m.filter = ""
+		m.refilter()
+	default:
+		if v.Key().Text != "" {
+			m.filter += safeText(v.Key().Text)
+			m.refilter()
 		}
 	}
 	return m, nil
 }
+
+func (m picker) navigationKey(key string) (tea.Model, tea.Cmd) {
+	if key == "ctrl+u" {
+		m.filter = ""
+		m.refilter()
+		return m, nil
+	}
+	switch key {
+	case "esc":
+		return m.escapeKey()
+	case "/":
+		m.searching = true
+	case "j", "down":
+		m.move(1)
+	case "k", "up":
+		m.move(-1)
+	case "pgdown":
+		m.move(m.pageSize())
+	case "pgup":
+		m.move(-m.pageSize())
+	case "enter":
+		if len(m.visible) > 0 {
+			m.choice = m.rows[m.visible[m.cursor]].tag
+			return m, tea.Quit
+		}
+	}
+	return m, nil
+}
+
+func (m picker) escapeKey() (tea.Model, tea.Cmd) {
+	if m.filter == "" {
+		return m, tea.Quit
+	}
+	m.filter = ""
+	m.refilter()
+	return m, nil
+}
+
 func (m *picker) refilter() {
 	m.visible = m.visible[:0]
 	for i, r := range m.rows {
@@ -168,53 +184,12 @@ func (m picker) View() tea.View {
 		clip(paint("LIVE  ", muted, true) + paint(safeText(m.now), "#86efac", true) + paint("    PIN  ", muted, true) + paint(safeText(m.pin), "#fcd34d", true)),
 	}
 
-	if m.height >= 10 {
-		lines = append(lines, "")
-	}
-	if m.searching {
-		lines = append(lines, clip(paint("/ "+m.filter+"▏", "#c4b5fd", true)))
-	} else {
-		lines = append(lines, clip(paint("/ search    ↑↓ / j k navigate    enter select    esc quit", muted, false)))
-	}
-	if m.height >= 10 {
-		lines = append(lines, clip(paint(fmt.Sprintf("%d of %d nodes", len(m.visible), len(m.rows)), muted, false)))
-	}
+	lines = m.headerLines(lines, clip, paint, muted)
 
 	window := m.pageSize()
 	top := min(m.top, max(0, len(m.visible)-window))
 	for i := top; i < len(m.visible) && i < top+window; i++ {
-		r := m.rows[m.visible[i]]
-		marker := "  "
-		if i == m.cursor {
-			marker = paint("› ", "#5eead4", true)
-		}
-		tagColor := "#e2e8f0"
-		if i == m.cursor {
-			tagColor = "#c4b5fd"
-		}
-		line := marker + paint(safeText(r.tag), tagColor, i == m.cursor)
-		if r.tag == m.now {
-			line += paint("  ● live", "#86efac", false)
-		}
-		if r.tag == m.pin {
-			line += paint("  ◆ pin", "#fcd34d", false)
-		}
-		if r.source != "" {
-			line += paint(" · "+safeText(r.source), muted, false)
-		}
-		if r.server != "" {
-			line += paint(" · "+safeText(r.server), muted, false)
-		}
-		if ms, ok := m.latency[r.tag]; ok {
-			latencyColor := "#86efac"
-			if ms > 300 {
-				latencyColor = "#fda4af"
-			} else if ms > 120 {
-				latencyColor = "#fcd34d"
-			}
-			line += paint(fmt.Sprintf(" · %d ms", ms), latencyColor, false)
-		}
-		lines = append(lines, clip(line))
+		lines = append(lines, clip(m.rowLine(i, paint)))
 	}
 
 	if len(m.visible) == 0 {
@@ -234,19 +209,58 @@ func (m picker) View() tea.View {
 	return view
 }
 
-func pick(ctx context.Context, manager app.Manager, api singbox.Clash) (string, error) {
-	if !term.IsTerminal(os.Stdin.Fd()) || !term.IsTerminal(os.Stdout.Fd()) {
-		return "", errors.New("use requires a tag without a terminal")
+func (m picker) headerLines(lines []string, clip func(string) string, paint func(string, string, bool) string, muted string) []string {
+	if m.height >= 10 {
+		lines = append(lines, "")
+	}
+	if m.searching {
+		lines = append(lines, clip(paint("/ "+m.filter+"▏", "#c4b5fd", true)))
+	} else {
+		lines = append(lines, clip(paint("/ search    ↑↓ / j k navigate    enter select    esc quit", muted, false)))
+	}
+	if m.height >= 10 {
+		lines = append(lines, clip(paint(fmt.Sprintf("%d of %d nodes", len(m.visible), len(m.rows)), muted, false)))
 	}
 
-	selected, err := api.Selector(ctx)
-	if err != nil {
-		return "", err
+	return lines
+}
+
+func (m picker) rowLine(i int, paint func(string, string, bool) string) string {
+	r := m.rows[m.visible[i]]
+	marker := "  "
+	if i == m.cursor {
+		marker = paint("› ", "#5eead4", true)
 	}
-	manifest, err := manager.Manifest()
-	if err != nil && !os.IsNotExist(err) {
-		return "", err
+	tagColor := "#e2e8f0"
+	if i == m.cursor {
+		tagColor = "#c4b5fd"
 	}
+	line := marker + paint(safeText(r.tag), tagColor, i == m.cursor)
+	if r.tag == m.now {
+		line += paint("  ● live", "#86efac", false)
+	}
+	if r.tag == m.pin {
+		line += paint("  ◆ pin", "#fcd34d", false)
+	}
+	if r.source != "" {
+		line += paint(" · "+safeText(r.source), "#94a3b8", false)
+	}
+	if r.server != "" {
+		line += paint(" · "+safeText(r.server), "#94a3b8", false)
+	}
+	if ms, ok := m.latency[r.tag]; ok {
+		latencyColor := "#86efac"
+		if ms > 300 {
+			latencyColor = "#fda4af"
+		} else if ms > 120 {
+			latencyColor = "#fcd34d"
+		}
+		line += paint(fmt.Sprintf(" · %d ms", ms), latencyColor, false)
+	}
+	return line
+}
+
+func pickerMetadata(manifest app.Manifest) (map[string]app.NodeInfo, map[string]bool) {
 	metadata := make(map[string]app.NodeInfo, len(manifest.Nodes)+len(manifest.ExtraNodes))
 	groups := make(map[string]bool, len(manifest.Sources))
 	for _, node := range manifest.Nodes {
@@ -259,6 +273,10 @@ func pick(ctx context.Context, manager app.Manager, api singbox.Clash) (string, 
 		metadata[node.Tag] = node
 	}
 
+	return metadata, groups
+}
+
+func newPicker(selected singbox.Selector, manifest app.Manifest, metadata map[string]app.NodeInfo, groups map[string]bool) picker {
 	m := picker{
 		now: selected.Now, pin: manifest.PinnedTag, active: manifest.PinActive,
 		width: 80, height: 24,
@@ -277,10 +295,11 @@ func pick(ctx context.Context, manager app.Manager, api singbox.Clash) (string, 
 		node := metadata[tag]
 		m.rows = append(m.rows, pickerRow{tag: tag, source: node.Source, server: node.Server})
 	}
-	m.refilter()
+	return m
+}
 
+func startPicker(ctx context.Context, manager app.Manager, api singbox.Clash, m picker) (*tea.Program, context.CancelFunc) {
 	probeCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
 	// A separate goroutine keeps the HTTP probe out of Bubble Tea's command lifecycle;
 	// quitting never waits for a slow server to finish its response.
 	program := tea.NewProgram(m, tea.WithContext(ctx), tea.WithoutSignalHandler())
@@ -301,6 +320,30 @@ func pick(ctx context.Context, manager app.Manager, api singbox.Clash) (string, 
 			}
 		}()
 	}
+
+	return program, cancel
+}
+
+func pick(ctx context.Context, manager app.Manager, api singbox.Clash) (string, error) {
+	if !term.IsTerminal(os.Stdin.Fd()) || !term.IsTerminal(os.Stdout.Fd()) {
+		return "", errors.New("use requires a tag without a terminal")
+	}
+
+	selected, err := api.Selector(ctx)
+	if err != nil {
+		return "", err
+	}
+	manifest, err := manager.Manifest()
+	if err != nil && !os.IsNotExist(err) {
+		return "", err
+	}
+	metadata, groups := pickerMetadata(manifest)
+
+	m := newPicker(selected, manifest, metadata, groups)
+	m.refilter()
+
+	program, cancel := startPicker(ctx, manager, api, m)
+	defer cancel()
 
 	result, err := program.Run()
 	if err != nil {

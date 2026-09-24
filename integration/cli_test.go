@@ -776,6 +776,76 @@ func TestStandaloneInit(t *testing.T) {
 	}
 }
 
+func standaloneSetup(t *testing.T, dir string, f *fixture) (string, string) {
+	t.Helper()
+	configPath := filepath.Join(dir, "sb", "config.json")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var settings map[string]any
+	if err := json.Unmarshal(data, &settings); err != nil {
+		t.Fatal(err)
+	}
+	settings["sing_box"] = helper
+	settings["converter"] = helper
+	settings["api_url"] = f.server.URL
+	settings["restart_command"] = []string{}
+	data, err = json.Marshal(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	urlPath := filepath.Join(dir, "provider-url")
+	if err := os.WriteFile(urlPath, []byte(f.server.URL+"/one?token=private"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return configPath, urlPath
+}
+
+func TestStandaloneUserWorkflow(t *testing.T) {
+	dir := t.TempDir()
+	cmd := exec.Command(binary, "init")
+	cmd.Env = append(os.Environ(), "XDG_CONFIG_HOME="+dir)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("init: %v\n%s", err, output)
+	}
+	f := newFixture(t)
+	configPath, urlPath := standaloneSetup(t, dir, f)
+	run := func(input string, args ...string) {
+		t.Helper()
+		cmd := exec.Command(binary, append([]string{"--config", configPath}, args...)...)
+		cmd.Stdin = strings.NewReader(input)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("sb %v: %v\n%s", args, err, output)
+		}
+	}
+	entry, err := json.Marshal(map[string]string{"id": "main", "url_file": urlPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run(string(entry), "subscription", "add")
+	run("", "update")
+	run("", "use", "a")
+	f.mu.Lock()
+	selected := f.selected
+	f.mu.Unlock()
+	if selected != "a" {
+		t.Fatal("standalone live selection was not changed")
+	}
+	for _, name := range []string{"subscriptions.json", "state/config.json", "state/cache.json"} {
+		info, err := os.Stat(filepath.Join(dir, "sb", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm() != 0600 {
+			t.Fatalf("private standalone file %s: %v", name, info.Mode())
+		}
+	}
+}
+
 func TestModes(t *testing.T) {
 	f := newFixture(t)
 	f.config["restart_command"] = []string{binary, "--config", filepath.Join(f.dir, "config.json"), "prepare"}

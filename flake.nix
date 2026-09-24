@@ -33,6 +33,14 @@
     in
     {
       overlays.default = final: _: { sb = package final; };
+      nixosModules.default = { ... }: {
+        imports = [ ./nix/modules/nixos.nix ];
+        _module.args.sbFlake = self;
+      };
+      darwinModules.default = { ... }: {
+        imports = [ ./nix/modules/darwin.nix ];
+        _module.args.sbFlake = self;
+      };
       packages = eachSystem (
         system:
         let

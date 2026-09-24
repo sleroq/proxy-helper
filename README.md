@@ -23,8 +23,17 @@ Configuration defaults to `$XDG_CONFIG_HOME/sb/config.json`, falling back to
 `~/.config/sb/config.json` on **both** macOS and Linux. `--config PATH` must precede
 the command. `init` creates a native sing-box template with a loopback mixed proxy
 on port 2080 and Clash API on port 9090; it does **not** enable TUN or require root.
-Adjust the template and add a service manager separately if desired. Set
-`restart_command` to an argv array to activate updates automatically.
+Adjust the template and add a user service manager separately if desired. The
+standalone files and generated config remain owned by your account; no Nix,
+root access, system TUN, or platform-specific service manager is needed. Keep
+the URL file and writable subscription store private (`chmod 600`), and keep
+`~/.config/sb/state` writable only by your account. `sb update` installs a new
+config; start or restart `sing-box run -c ~/.config/sb/state/config.json`
+manually when there is no service. To automate activation, set
+`restart_command` to an argv array for **your own** service manager (for
+example, `systemctl --user restart sing-box.service` on Linux or a user
+`launchctl kickstart -k gui/<UID>/<LABEL>` on macOS). Do not put it through a
+shell or run the standalone setup as root.
 
 Use an existing private URL file instead of typing credentials into shell history.
 Source JSON also accepts `url`, for private stores managed outside Nix. `add`
@@ -190,19 +199,45 @@ is removed, the OS may send traffic directly. A real fail-closed mode requires
 separately managed OS firewall rules on each host and is not implemented here.
 Disabling subscriptions is not a way to disable transparent interception.
 
-## Nix integration
+## Nix integration and refresh authorization
 
-The flake exports `packages.<system>.default` and `overlays.default` (`pkgs.sb`).
-It builds the CLI and runs the subprocess integration suite. The dotfiles module
-generates a non-secret config exposed at `/etc/sb/config.json` and wraps `sb` with
-its immutable config path. It keeps DNS/TUN/routing, services, timers, capabilities,
-and secret provisioning in Nix. The CLI owns runtime data and composition.
+The flake exports `packages.<system>.default`, `overlays.default`,
+`nixosModules.default`, and `darwinModules.default`. Import the appropriate
+module and set `services.sb.enable = true`, `services.sb.subscription.enable =
+true`, `services.sb.converterPackage` (the `sing-box-sub` package), and secret
+`subscription.sources = [{ name = "main"; urlFile = "/run/agenix/provider-url"; }]`.
+The default template is a loopback mixed proxy; configure a native TUN, DNS,
+and routing with `services.sb.settings` only on hosts that need transparent
+routing. The module generates a non-secret `/etc/sb/config.json` and an `sb`
+wrapper that uses it. Existing root-owned `/var/lib/sing-box` state and legacy
+caches remain in place; the service runs `prepare` on startup and the root-owned
+update timer runs `sb update`. Do not switch services before reviewing generated
+config and secret paths. Never put plaintext `url` values in Nix files.
 
-The system state directory is `/var/lib/sing-box`; mutations require its owner's
-permissions (`sudo sb ...`). Existing declared `subscription.sources` become a
-read-only store. `subscription.stores` adds agenix-managed complete stores or
-editable files; its default is the private local store in the state directory.
-Never put plaintext `url` values in generated Nix files. Nix store entries are public.
+For managed hosts, set `services.sb.refreshUser = "USERNAME"`. **`sb refresh`**
+then requests a fixed, argument-free update without sudo: NixOS permits that
+user via polkit to *start only* `sing-box-update.service`; the root unit fetches,
+validates, installs, and restarts. nix-darwin gives that user write access only
+to `/var/lib/sing-box/refresh-request` (0600) inside a root-owned directory;
+launchd watches the file and runs the same fixed root update. The Darwin request
+is asynchronous: `sb refresh` confirms the trigger was touched, **not** that
+fetch or activation succeeded; inspect `sb status` and the service log. WatchPaths
+can coalesce rapid requests, so this is not a synchronous RPC. `sb refresh ID`
+is refused; selecting a source for a privileged update requires the owner to
+run `sb update ID` directly. If `refreshUser` is unset, no user is granted a
+refresh trigger. User accounts may still use read-only `sb status`, `sb list`,
+`sb test`, and live-only `sb use` via the loopback Clash API.
+
+The root-owned state directory, cache, overrides, local subscription store,
+mode/pin files, and backend config are **not** user-writable; subscription URLs
+stay in root-readable secret files. A user-writable registry or override in a
+root-run process would allow source injection or symlink/path attacks. The only
+managed user-write boundary is the Darwin request file, which the privileged
+updater never opens or parses. The public 0644 manifest/health files reveal
+source IDs, tags, server addresses, and outcomes but not credentials. Preserve
+root ownership when migrating an existing installation; inspect any previously
+editable symlinks before enabling the managed updater. Standalone user-owned
+stores and caches are separate and must never be reused as managed root state.
 
 The original `subscription-outbounds.json` + `subscription-sources.json` cache is
 imported on first preparation/update without a fetch. Legacy `outboundsFile`

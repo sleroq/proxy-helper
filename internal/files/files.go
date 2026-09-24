@@ -25,6 +25,11 @@ func Write(path string, value any, mode os.FileMode) error {
 	if err != nil {
 		return err
 	}
+	return WriteBytes(path, append(data, '\n'), mode)
+}
+
+// WriteBytes atomically restores a previously captured file without changing its bytes.
+func WriteBytes(path string, data []byte, mode os.FileMode) error {
 	if _, err := os.Lstat(path); err == nil {
 		path, err = filepath.EvalSymlinks(path)
 		if err != nil {
@@ -41,7 +46,7 @@ func Write(path string, value any, mode os.FileMode) error {
 		return err
 	}
 	defer func() { _ = os.Remove(f.Name()) }()
-	if _, err := f.Write(append(data, '\n')); err != nil {
+	if _, err := f.Write(data); err != nil {
 		_ = f.Close()
 		return err
 	}

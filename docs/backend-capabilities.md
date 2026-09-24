@@ -13,7 +13,7 @@ not a proxy supervisor.
 | Live selection/latency | Select and URL-test groups; Clash REST `/proxies/proxy` and `/group/{name}/delay` used by sb. | gRPC routing/balancer and observatory, not drop-in Clash REST. |
 | DNS/TUN | Native DNS and TUN; sb permits native DNS template settings but generates **no TUN**, bypass or tunnel controls. | Native DNS and TUN; OS routing and DNS hijack need separate integration. |
 | Native validation | `mihomo -t -f CONFIG -d STATE_DIR`; installed candidate tested before commit. | `xray run -test -c CONFIG`. |
-| Packaging | Official macOS/Linux releases, `pkgs.mihomo` in nixpkgs; sb offers a separate NixOS module. | Official macOS/Linux releases, `pkgs.xray` in nixpkgs; no sb module. |
+| Packaging | Official macOS/Linux releases, `pkgs.mihomo` in nixpkgs; sb offers selectable managed backends on NixOS/nix-darwin and a separate legacy NixOS profile. | Official macOS/Linux releases, `pkgs.xray` in nixpkgs; no sb module. |
 
 Sources: [mihomo provider dialect](https://wiki.metacubex.one/en/config/proxy-providers/),
 [API](https://wiki.metacubex.one/en/api/),
@@ -44,7 +44,6 @@ ALPN, insecure flag, uTLS fingerprint, Reality public key/short ID, WS path/head
 and gRPC service name. Unknown protocol/transport fields reject the candidate
 rather than silently changing its security or routing semantics. Mihomo's `profile.store-selected` is forced off (an explicit `true` is
 rejected): `use` remains live-only, while `pin` owns durable selection. A stale pin
-remains saved but defaults to auto/manual when its leaf disappears. Use distinct
-state dirs and listener ports for concurrent clients. Credentials and raw native
+remains saved but defaults to auto/manual when its leaf disappears. The selectable managed service shares one state directory and port, with only one active core. The standalone/legacy profiles require distinct state dirs and listener ports for concurrent clients. Credentials and raw native
 validation diagnostics are not printed by `sb update`; `sb check` forwards core
 diagnostics explicitly.

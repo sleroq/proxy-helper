@@ -25,6 +25,8 @@ const usage = `Usage: sb [--config PATH] COMMAND
   update [ID...]               Fetch subscriptions, validate, install, restart
   bypass on|off               Toggle direct-only routing
   tunnel off|on               Toggle template TUN inbound
+  run                          Exec selected core with installed config
+  backend list | select [NAME]  Inspect or switch managed backend
   prepare                      Render from cache; no fetch or restart
   apply                        Render from cache and restart
   list | status                Inspect running selection and public manifest
@@ -83,16 +85,22 @@ func run(ctx context.Context, args []string) error {
 	if args[0] == "init" {
 		return initCommand(*path, args[1:])
 	}
-	settings, err := app.LoadSettings(*path)
+	return runConfigured(ctx, *path, args)
+}
+
+func runConfigured(ctx context.Context, path string, args []string) error {
+	settings, err := app.LoadSettings(path)
 	if err != nil {
 		return err
 	}
-	client, err := backend.New(backend.Config{
-		Name: settings.Backend, SingBox: settings.SingBox, Mihomo: settings.Mihomo,
-		Converter: settings.Converter, LegacyOutboundsFile: settings.LegacyOutboundsFile,
-		StaticOutboundsFile: settings.StaticOutboundsFile, ExtraOutboundsFile: settings.ExtraOutboundsFile,
-		RoutingMark: settings.RoutingMark,
-	})
+	if args[0] == "backend" {
+		return backendCommand(ctx, settings, args[1:])
+	}
+	name, err := settings.ActiveBackend()
+	if err != nil {
+		return err
+	}
+	client, settings, err := makeClient(settings, name)
 	if err != nil {
 		return err
 	}
@@ -120,6 +128,11 @@ func execute(ctx context.Context, settings app.Settings, client backend.Client, 
 	api := client.Control(settings.APIURL)
 	command, rest := args[0], args[1:]
 	switch command {
+	case "run":
+		if len(rest) != 0 {
+			return fmt.Errorf("run takes no arguments")
+		}
+		return execBackend(settings, client)
 	case "update", "subscription", "prepare", "apply", "bypass", "tunnel":
 		return mutate(ctx, manager, command, rest)
 	case "use", "pin", "unpin", "test", "config", "check":

@@ -8,7 +8,7 @@
 let
   cfg = config.services.sb;
   sub = cfg.subscription;
-  log = "/var/log/sing-box.log";
+  log = "/var/log/sb-proxy.log";
 in
 {
   imports = [ ./common.nix ];
@@ -27,14 +27,14 @@ in
       ${pkgs.coreutils}/bin/install -d -o root -g wheel -m 0755 ${lib.escapeShellArg cfg.stateDir}
       ${pkgs.coreutils}/bin/install -o ${lib.escapeShellArg cfg.refreshUser} -g wheel -m 0600 /dev/null ${lib.escapeShellArg "${cfg.stateDir}/refresh-request"}
     '';
-    launchd.daemons.sing-box.serviceConfig = {
+    launchd.daemons.sb-proxy.serviceConfig = {
       ProgramArguments = [ "${sbModule.runner}" ];
       RunAtLoad = true;
       KeepAlive = true;
       StandardOutPath = log;
       StandardErrorPath = log;
     };
-    launchd.daemons.sing-box-update = lib.mkIf sub.enable {
+    launchd.daemons.sb-proxy-update = lib.mkIf sub.enable {
       serviceConfig = {
         ProgramArguments = [ "${sbModule.update}" ];
         StartInterval = sub.updateInterval;
@@ -42,7 +42,7 @@ in
         StandardErrorPath = log;
       };
     };
-    launchd.daemons.sing-box-refresh = lib.mkIf (sub.enable && cfg.refreshUser != null) {
+    launchd.daemons.sb-proxy-refresh = lib.mkIf (sub.enable && cfg.refreshUser != null) {
       serviceConfig = {
         ProgramArguments = [ "${sbModule.update}" ];
         WatchPaths = [ "${cfg.stateDir}/refresh-request" ];

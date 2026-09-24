@@ -36,6 +36,9 @@ func (m Manager) Pin(ctx context.Context, tag string) (string, error) {
 		return "", fmt.Errorf("cannot modify pin: state directory requires owner authorization: %w", err)
 	}
 	defer func() { _ = lock.Close() }()
+	if err := m.CheckActive(); err != nil {
+		return "", err
+	}
 	catalog, err := subscription.Load(s.Stores, s.OverridesFile)
 	if err != nil {
 		return "", err

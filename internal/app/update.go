@@ -27,9 +27,16 @@ func (m Manager) Update(ctx context.Context, ids []string) error {
 	if err != nil {
 		return err
 	}
+	if err := m.CheckActive(); err != nil {
+		_ = lock.Close()
+		return err
+	}
 	failed, err := m.updateLocked(ctx, ids)
 	_ = lock.Close() // prepare runs during restart, so release before activation.
 	if err != nil {
+		return err
+	}
+	if err := m.CheckActive(); err != nil {
 		return err
 	}
 	restartErr := m.Restart(ctx)
@@ -131,6 +138,9 @@ func (m Manager) Prepare(ctx context.Context) error {
 		return err
 	}
 	defer func() { _ = lock.Close() }()
+	if err := m.CheckActive(); err != nil {
+		return err
+	}
 	s := m.Settings
 	if s.LegacyOutboundsFile != "" {
 		template, err := os.ReadFile(s.TemplateFile)
@@ -159,6 +169,24 @@ func (m Manager) Prepare(ctx context.Context) error {
 		return err
 	}
 	return m.buildAndInstall(ctx, catalog.Sources(), cache)
+}
+
+// Candidate composes cached subscriptions without changing installed state.
+func (m Manager) Candidate(ctx context.Context) (json.RawMessage, Manifest, error) {
+	catalog, err := subscription.Load(m.Settings.Stores, m.Settings.OverridesFile)
+	if err != nil {
+		return nil, Manifest{}, err
+	}
+	cache, err := m.Settings.LoadCache()
+	if err != nil {
+		return nil, Manifest{}, err
+	}
+	pin, err := m.Settings.loadPin()
+	if err != nil {
+		return nil, Manifest{}, err
+	}
+	config, _, manifest, err := m.buildCandidate(ctx, catalog.Sources(), cache, pin)
+	return config, manifest, err
 }
 
 func (m Manager) buildAndInstall(ctx context.Context, sources []subscription.Source, cache Cache) error {
@@ -346,6 +374,17 @@ func (m Manager) Check(ctx context.Context) error {
 	return child.Run()
 }
 
+func (m Manager) CheckActive() error {
+	name, err := m.Settings.ActiveBackend()
+	if err != nil {
+		return err
+	}
+	if name != m.Backend.Name() {
+		return fmt.Errorf("active backend changed; retry command")
+	}
+	return nil
+}
+
 func (m Manager) Restart(ctx context.Context) error {
 	args := m.Settings.RestartCommand
 	if len(args) == 0 {
@@ -371,6 +410,9 @@ func (m Manager) Edit(change func(*subscription.Catalog) error) error {
 		return err
 	}
 	defer func() { _ = lock.Close() }()
+	if err := m.CheckActive(); err != nil {
+		return err
+	}
 	c, err := subscription.Load(m.Settings.Stores, m.Settings.OverridesFile)
 	if err != nil {
 		return err

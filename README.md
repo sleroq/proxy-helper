@@ -39,7 +39,7 @@ Use an existing private URL file instead of typing credentials into shell histor
 Source JSON also accepts `url`, for private stores managed outside Nix. `add`
 reads exactly one source object from stdin and never accepts URLs as CLI arguments.
 
-## Mihomo backend (standalone and NixOS)
+## Mihomo backend (standalone and legacy NixOS profile)
 
 Install mihomo alongside `sb`, then initialize a **separate** user-owned profile:
 
@@ -62,7 +62,7 @@ native DNS and inbound options; it cannot override generated proxies, groups,
 rules, mode or TUN. `api_url` must point to its `external-controller`. Do not
 reuse a sing-box template, state directory, or running listener ports.
 
-The NixOS flake output `nixosModules.mihomo` provides `services.sbMihomo.enable`,
+The **separate legacy profile** `nixosModules.mihomo` provides `services.sbMihomo.enable`,
 `services.sbMihomo.sources = [{ name = "main"; urlFile = "/run/agenix/url"; }]`,
 a root-owned `sb-mihomo.service`, update timer, and an `sb-mihomo` CLI wrapper.
 It uses `/var/lib/sb-mihomo` independently from the sing-box module. Run
@@ -244,19 +244,58 @@ Disabling subscriptions is not a way to disable transparent interception.
 The flake exports `packages.<system>.default`, `overlays.default`,
 `nixosModules.default`, and `darwinModules.default`. Import the appropriate
 module and set `services.sb.enable = true`, `services.sb.subscription.enable =
-true`, `services.sb.converterPackage` (the `sing-box-sub` package), and secret
+true`, optionally `services.sb.converterPackage` (the `sing-box-sub` package), and secret
 `subscription.sources = [{ name = "main"; urlFile = "/run/agenix/provider-url"; }]`.
 The default template is a loopback mixed proxy; configure a native TUN, DNS,
 and routing with `services.sb.settings` only on hosts that need transparent
 routing. The module generates a non-secret `/etc/sb/config.json` and an `sb`
 wrapper that uses it. Existing root-owned `/var/lib/sing-box` state and legacy
-caches remain in place; the service runs `prepare` on startup and the root-owned
-update timer runs `sb update`. Do not switch services before reviewing generated
+caches remain in place; `sb-proxy` runs only `sb run` against the installed,
+prevalidated state config. Run `sudo sb update` (or `sudo sb apply` with a
+usable cache) once to seed state **before** starting the service; startup does
+not prepare a config. The root-owned update timer runs `sb update`. Do not switch services before reviewing generated
 config and secret paths. Never put plaintext `url` values in Nix files.
+
+To enable selection on NixOS or nix-darwin, configure:
+
+```nix
+services.sb.backends = {
+  "sing-box" = pkgs.sing-box;
+  mihomo = pkgs.mihomo;
+};
+services.sb.defaultBackend = "sing-box";
+services.sb.converterPackage = null; # native URI parser; recommended for mixed clients
+# Override either package in the map, e.g. mihomo = myMihomoPackage;
+# services.sb.mihomo.settings = { dns.enable = true; };
+```
+
+The default backend map is `{ "sing-box" = services.sb.package; }`, retaining
+existing sing-box package overrides. Both cores use one root-owned state/cache,
+proxy port 1080, loopback API and **one** `sb-proxy` service; they never run
+concurrently. Multi-backend configurations require the sing-box loopback mixed
+listener on port 1080 and reject a sing-box TUN inbound, since mihomo cannot
+preserve its interception behavior. Both templates expose the loopback Clash API
+when multiple backends are configured, even without subscriptions. Converter-specific cached nodes can fail mihomo
+validation and block a switch; use the native parser (`converterPackage = null`)
+for portable shared caches. The native mihomo template is independent of `services.sb.settings`
+and accepts `services.sb.mihomo.settings` (JSON). It excludes managed proxies,
+groups, providers, rules, mode and TUN; listener and API must remain loopback-only.
+Use `sb backend list` to inspect available cores, then `sudo sb backend select
+mihomo` (or `sing-box`) to validate, install and restart. Omit the name for an
+interactive picker when stdin/stdout are terminals. Switching requires
+state-owner authorization, briefly interrupts proxy traffic, and preserves the
+installed config if validation fails. If restart or readiness fails, `sb` attempts
+to restore the previous config and restart the old core; inspect the service if
+rollback itself fails. A custom service restart must launch `sb run` without
+calling `sb prepare`, because switching holds the state lock across restart. Existing bypass/tunnel mode,
+static/extra outbounds or legacy complete-outbounds settings can reject an
+incompatible switch; clear them explicitly rather than assuming translation.
+The standalone `services.sbMihomo` module remains a **separate legacy profile**,
+not another service to enable alongside selectable `services.sb`.
 
 For managed hosts, set `services.sb.refreshUser = "USERNAME"`. **`sb refresh`**
 then requests a fixed, argument-free update without sudo: NixOS permits that
-user via polkit to *start only* `sing-box-update.service`; the root unit fetches,
+user via polkit to *start only* `sb-proxy-update.service`; the root unit fetches,
 validates, installs, and restarts. nix-darwin gives that user write access only
 to `/var/lib/sing-box/refresh-request` (0600) inside a root-owned directory;
 launchd watches the file and runs the same fixed root update. The Darwin request
@@ -313,7 +352,7 @@ is `github.com/sleroq/sb`; until published, consume the local module using Go's
 
 Fetch/conversion/composition/core-validation failures leave installed state
 untouched. The updater holds an OS advisory lock and releases it **before**
-restarting, since service startup calls `prepare`. A failed restart explicitly
+restarting; service startup executes only the previously installed config. A failed restart explicitly
 reports that the new configuration has already been installed. No automatic
 rollback is attempted.
 

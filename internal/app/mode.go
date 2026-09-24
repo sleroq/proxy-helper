@@ -39,9 +39,15 @@ func (m Manager) SetMode(ctx context.Context, command string, enabled bool) erro
 	if err != nil {
 		return err
 	}
-	err = m.setModeLocked(ctx, command, enabled)
+	err = m.CheckActive()
+	if err == nil {
+		err = m.setModeLocked(ctx, command, enabled)
+	}
 	_ = lock.Close()
 	if err != nil {
+		return err
+	}
+	if err := m.CheckActive(); err != nil {
 		return err
 	}
 	return m.Restart(ctx)

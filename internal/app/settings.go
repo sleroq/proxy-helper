@@ -12,25 +12,90 @@ import (
 )
 
 type Settings struct {
-	TemplateFile        string               `json:"template_file"`
-	StaticOutboundsFile string               `json:"static_outbounds_file,omitempty"`
-	ExtraOutboundsFile  string               `json:"extra_outbounds_file,omitempty"`
-	LegacyOutboundsFile string               `json:"legacy_outbounds_file,omitempty"`
-	StateDir            string               `json:"state_dir"`
-	APIURL              string               `json:"api_url"`
-	TestURL             string               `json:"test_url"`
-	TestInterval        string               `json:"test_interval"`
-	Tolerance           uint                 `json:"tolerance"`
-	RoutingMark         uint                 `json:"routing_mark,omitempty"`
-	SingBox             string               `json:"sing_box"`
-	Backend             string               `json:"backend,omitempty"`
-	Mihomo              string               `json:"mihomo,omitempty"`
-	Converter           string               `json:"converter"`
-	RestartCommand      []string             `json:"restart_command,omitempty"`
-	Stores              []subscription.Store `json:"stores"`
-	OverridesFile       string               `json:"overrides_file"`
-	ExcludeProtocols    string               `json:"exclude_protocols"`
-	ExcludeNodeNames    string               `json:"exclude_node_names"`
+	TemplateFile        string                     `json:"template_file"`
+	StaticOutboundsFile string                     `json:"static_outbounds_file,omitempty"`
+	ExtraOutboundsFile  string                     `json:"extra_outbounds_file,omitempty"`
+	LegacyOutboundsFile string                     `json:"legacy_outbounds_file,omitempty"`
+	StateDir            string                     `json:"state_dir"`
+	APIURL              string                     `json:"api_url"`
+	TestURL             string                     `json:"test_url"`
+	TestInterval        string                     `json:"test_interval"`
+	Tolerance           uint                       `json:"tolerance"`
+	RoutingMark         uint                       `json:"routing_mark,omitempty"`
+	SingBox             string                     `json:"sing_box"`
+	Backend             string                     `json:"backend,omitempty"`
+	Backends            map[string]BackendSettings `json:"backends,omitempty"`
+	Mihomo              string                     `json:"mihomo,omitempty"`
+	Converter           string                     `json:"converter"`
+	RestartCommand      []string                   `json:"restart_command,omitempty"`
+	Stores              []subscription.Store       `json:"stores"`
+	OverridesFile       string                     `json:"overrides_file"`
+	ExcludeProtocols    string                     `json:"exclude_protocols"`
+	ExcludeNodeNames    string                     `json:"exclude_node_names"`
+}
+
+type BackendSettings struct {
+	TemplateFile string `json:"template_file"`
+	Binary       string `json:"binary"`
+}
+
+func (s Settings) SelectedBackend() (string, error) {
+	name := s.Backend
+	if name == "" {
+		name = "sing-box"
+	}
+	var state activeRecord
+	err := files.Read(filepath.Join(s.StateDir, "active-backend.json"), &state)
+	if err != nil && !os.IsNotExist(err) {
+		return "", err
+	}
+	if err == nil {
+		return state.Backend, nil
+	}
+	return name, nil
+}
+
+func (s Settings) ActiveBackend() (string, error) {
+	name, err := s.SelectedBackend()
+	if err != nil {
+		return "", err
+	}
+	if len(s.Backends) != 0 {
+		if _, ok := s.Backends[name]; !ok {
+			return "", fmt.Errorf("backend %q is not configured", name)
+		}
+	} else {
+		defaultName := s.Backend
+		if defaultName == "" {
+			defaultName = "sing-box"
+		}
+		if name != defaultName {
+			return "", fmt.Errorf("backend %q is not configured", name)
+		}
+	}
+	return name, nil
+}
+
+func (s Settings) BackendPaths(name string) (string, string, error) {
+	if len(s.Backends) != 0 {
+		entry, ok := s.Backends[name]
+		if !ok {
+			return "", "", fmt.Errorf("backend %q is not configured", name)
+		}
+		return entry.TemplateFile, entry.Binary, nil
+	}
+	defaultName := s.Backend
+	if defaultName == "" {
+		defaultName = "sing-box"
+	}
+	if name != defaultName {
+		return "", "", fmt.Errorf("backend %q is not configured", name)
+	}
+	binary := s.SingBox
+	if name == "mihomo" {
+		binary = s.Mihomo
+	}
+	return s.TemplateFile, binary, nil
 }
 
 func DefaultConfig() (string, error) {
@@ -55,9 +120,19 @@ func LoadSettings(path string) (Settings, error) {
 		return s, err
 	}
 
+	if err := s.resolvePaths(path); err != nil {
+		return s, err
+	}
+	if s.StateDir == "" || (s.TemplateFile == "" && len(s.Backends) == 0) {
+		return s, fmt.Errorf("state_dir and template_file are required")
+	}
+	return s, nil
+}
+
+func (s *Settings) resolvePaths(path string) error {
 	base, err := filepath.Abs(filepath.Dir(path))
 	if err != nil {
-		return s, err
+		return err
 	}
 	resolve := func(p string) string {
 		if p == "" || filepath.IsAbs(p) {
@@ -66,6 +141,17 @@ func LoadSettings(path string) (Settings, error) {
 		return filepath.Join(base, p)
 	}
 	s.TemplateFile = resolve(s.TemplateFile)
+	for name, entry := range s.Backends {
+		if name != "sing-box" && name != "mihomo" {
+			return fmt.Errorf("unsupported backend %q", name)
+		}
+		entry.TemplateFile = resolve(entry.TemplateFile)
+		entry.Binary = resolve(entry.Binary)
+		if entry.TemplateFile == "" || entry.Binary == "" {
+			return fmt.Errorf("backend %q requires template_file and binary", name)
+		}
+		s.Backends[name] = entry
+	}
 	s.StaticOutboundsFile = resolve(s.StaticOutboundsFile)
 	s.ExtraOutboundsFile = resolve(s.ExtraOutboundsFile)
 	s.LegacyOutboundsFile = resolve(s.LegacyOutboundsFile)
@@ -75,10 +161,7 @@ func LoadSettings(path string) (Settings, error) {
 		s.Stores[i].Path = resolve(s.Stores[i].Path)
 	}
 
-	if s.StateDir == "" || s.TemplateFile == "" {
-		return s, fmt.Errorf("state_dir and template_file are required")
-	}
-	return s, nil
+	return nil
 }
 
 // Init creates a non-TUN, unprivileged standalone setup. Explicitly opt

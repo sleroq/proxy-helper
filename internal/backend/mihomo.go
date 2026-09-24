@@ -65,7 +65,15 @@ func (b mihomoClient) CheckCommand(path, stateDir string) (string, []string) {
 	return b.binary, []string{"-t", "-f", path, "-d", stateDir}
 }
 
+func (b mihomoClient) RunCommand(path, stateDir string) (string, []string) {
+	return b.binary, []string{"-f", path, "-d", stateDir}
+}
 func (b mihomoClient) Control(url string) Controller { return clash.Client{URL: url} }
 func (b mihomoClient) Mode(command string) error {
 	return fmt.Errorf("%s is not supported by mihomo backend", command)
+}
+
+func (b mihomoClient) Ready(ctx context.Context, apiURL string) error {
+	_, err := b.Control(apiURL).Selector(ctx)
+	return err
 }

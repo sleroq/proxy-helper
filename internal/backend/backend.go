@@ -26,6 +26,7 @@ type Client interface {
 	app.Backend
 	Template() json.RawMessage
 	Control(apiURL string) Controller
+	RunCommand(configPath, stateDir string) (string, []string)
 }
 
 type Config struct {
@@ -60,9 +61,9 @@ func New(config Config) (Client, error) {
 }
 
 func (config Config) validateMihomo() error {
-	if config.Converter != "" || config.LegacyOutboundsFile != "" || config.StaticOutboundsFile != "" ||
+	if config.LegacyOutboundsFile != "" || config.StaticOutboundsFile != "" ||
 		config.ExtraOutboundsFile != "" || config.RoutingMark != 0 {
-		return fmt.Errorf("mihomo does not support sing-box converter, legacy/static/extra outbounds, or routing_mark")
+		return fmt.Errorf("mihomo does not support legacy/static/extra outbounds or routing_mark")
 	}
 	return nil
 }

@@ -18,8 +18,8 @@ in
 {
   imports = [ ./common.nix ];
   config = lib.mkIf cfg.enable {
-    systemd.services.sing-box = {
-      description = "sing-box";
+    systemd.services.sb-proxy = {
+      description = "sb-proxy";
       wantedBy = [ "multi-user.target" ];
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
@@ -42,8 +42,8 @@ in
         '';
       };
     };
-    systemd.services.sing-box-update = lib.mkIf sub.enable {
-      description = "Update sing-box subscription";
+    systemd.services.sb-proxy-update = lib.mkIf sub.enable {
+      description = "Update sb-proxy subscription";
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
       serviceConfig = {
@@ -52,12 +52,12 @@ in
         ExecStart = sbModule.update;
       };
     };
-    systemd.timers.sing-box-update = lib.mkIf sub.enable {
+    systemd.timers.sb-proxy-update = lib.mkIf sub.enable {
       wantedBy = [ "timers.target" ];
       timerConfig = {
         OnBootSec = "5m";
         OnUnitActiveSec = "${toString sub.updateInterval}s";
-        Unit = "sing-box-update.service";
+        Unit = "sb-proxy-update.service";
       };
     };
     security.polkit.enable = lib.mkIf (cfg.refreshUser != null && sub.enable) (lib.mkDefault true);
@@ -65,7 +65,7 @@ in
       polkit.addRule(function(action, subject) {
         if (subject.user == ${builtins.toJSON cfg.refreshUser} &&
             action.id == "org.freedesktop.systemd1.manage-units" &&
-            action.lookup("unit") == "sing-box-update.service" &&
+            action.lookup("unit") == "sb-proxy-update.service" &&
             action.lookup("verb") == "start") return polkit.Result.YES;
       });
     '';

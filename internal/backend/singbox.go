@@ -64,5 +64,14 @@ func (b singBox) CheckCommand(path, _ string) (string, []string) {
 	return b.binary, []string{"check", "-c", path}
 }
 
+func (b singBox) RunCommand(path, _ string) (string, []string) {
+	return b.binary, []string{"run", "-c", path}
+}
+
 func (b singBox) Control(url string) Controller { return clash.Client{URL: url} }
 func (b singBox) Mode(string) error             { return nil }
+
+func (b singBox) Ready(ctx context.Context, apiURL string) error {
+	_, err := b.Control(apiURL).Selector(ctx)
+	return err
+}

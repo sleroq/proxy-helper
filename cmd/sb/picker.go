@@ -21,12 +21,12 @@ type pickerRow struct{ tag, source, server string }
 type latencyMsg map[string]int
 type pulseMsg struct{}
 type picker struct {
-	rows                              []pickerRow
-	visible                           []int
-	now, pin, choice, filter          string
-	active, searching, probing, color bool
-	cursor, top, width, height, frame int
-	latency                           map[string]int
+	rows                                       []pickerRow
+	visible                                    []int
+	now, pin, choice, filter                   string
+	active, searching, probing, color, backend bool
+	cursor, top, width, height, frame          int
+	latency                                    map[string]int
 }
 
 func safeText(s string) string {
@@ -179,9 +179,16 @@ func (m picker) View() tea.View {
 
 	clip := func(s string) string { return lipgloss.NewStyle().MaxWidth(width).Render(s) }
 	muted := "#94a3b8"
+	label, state := "SELECT OUTBOUND", "LIVE"
+	if m.backend {
+		label, state = "SELECT BACKEND", "ACTIVE"
+	}
 	lines := []string{
-		clip(paint("◆  SB", "#5eead4", true) + paint("  /  SELECT OUTBOUND", "#c4b5fd", true)),
-		clip(paint("LIVE  ", muted, true) + paint(safeText(m.now), "#86efac", true) + paint("    PIN  ", muted, true) + paint(safeText(m.pin), "#fcd34d", true)),
+		clip(paint("◆  SB", "#5eead4", true) + paint("  /  "+label, "#c4b5fd", true)),
+		clip(paint(state+"  ", muted, true) + paint(safeText(m.now), "#86efac", true)),
+	}
+	if !m.backend {
+		lines[1] += paint("    PIN  ", muted, true) + paint(safeText(m.pin), "#fcd34d", true)
 	}
 
 	lines = m.headerLines(lines, clip, paint, muted)
@@ -193,13 +200,9 @@ func (m picker) View() tea.View {
 	}
 
 	if len(m.visible) == 0 {
-		lines = append(lines, "  No matching nodes")
+		lines = append(lines, "  No matches")
 	}
-	if m.probing {
-		lines = append(lines, clip(paint("  Measuring latency "+[]string{"◐", "◓", "◑", "◒"}[m.frame%4], "#5eead4", false)))
-	} else {
-		lines = append(lines, clip(paint("  Enter selects live only · pin TAG persists", muted, false)))
-	}
+	lines = append(lines, clip(m.footerLine(paint, muted)))
 	if len(lines) > m.height && m.height > 0 {
 		lines = lines[:m.height]
 	}
@@ -207,6 +210,16 @@ func (m picker) View() tea.View {
 	view := tea.NewView(strings.Join(lines, "\n"))
 	view.AltScreen = true
 	return view
+}
+
+func (m picker) footerLine(paint func(string, string, bool) string, muted string) string {
+	if m.probing {
+		return paint("  Measuring latency "+[]string{"◐", "◓", "◑", "◒"}[m.frame%4], "#5eead4", false)
+	}
+	if m.backend {
+		return paint("  Enter switches backend · esc cancels", muted, false)
+	}
+	return paint("  Enter selects live only · pin TAG persists", muted, false)
 }
 
 func (m picker) headerLines(lines []string, clip func(string) string, paint func(string, string, bool) string, muted string) []string {
@@ -219,7 +232,11 @@ func (m picker) headerLines(lines []string, clip func(string) string, paint func
 		lines = append(lines, clip(paint("/ search    ↑↓ / j k navigate    enter select    esc quit", muted, false)))
 	}
 	if m.height >= 10 {
-		lines = append(lines, clip(paint(fmt.Sprintf("%d of %d nodes", len(m.visible), len(m.rows)), muted, false)))
+		kind := "nodes"
+		if m.backend {
+			kind = "backends"
+		}
+		lines = append(lines, clip(paint(fmt.Sprintf("%d of %d %s", len(m.visible), len(m.rows), kind), muted, false)))
 	}
 
 	return lines
@@ -237,9 +254,13 @@ func (m picker) rowLine(i int, paint func(string, string, bool) string) string {
 	}
 	line := marker + paint(safeText(r.tag), tagColor, i == m.cursor)
 	if r.tag == m.now {
-		line += paint("  ● live", "#86efac", false)
+		state := "live"
+		if m.backend {
+			state = "active"
+		}
+		line += paint("  ● "+state, "#86efac", false)
 	}
-	if r.tag == m.pin {
+	if !m.backend && r.tag == m.pin {
 		line += paint("  ◆ pin", "#fcd34d", false)
 	}
 	if r.source != "" {
@@ -249,15 +270,19 @@ func (m picker) rowLine(i int, paint func(string, string, bool) string) string {
 		line += paint(" · "+safeText(r.server), "#94a3b8", false)
 	}
 	if ms, ok := m.latency[r.tag]; ok {
-		latencyColor := "#86efac"
-		if ms > 300 {
-			latencyColor = "#fda4af"
-		} else if ms > 120 {
-			latencyColor = "#fcd34d"
-		}
-		line += paint(fmt.Sprintf(" · %d ms", ms), latencyColor, false)
+		line += latencyLabel(ms, paint)
 	}
 	return line
+}
+
+func latencyLabel(ms int, paint func(string, string, bool) string) string {
+	color := "#86efac"
+	if ms > 300 {
+		color = "#fda4af"
+	} else if ms > 120 {
+		color = "#fcd34d"
+	}
+	return paint(fmt.Sprintf(" · %d ms", ms), color, false)
 }
 
 func pickerMetadata(manifest app.Manifest) (map[string]app.NodeInfo, map[string]bool) {

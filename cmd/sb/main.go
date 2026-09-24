@@ -24,6 +24,8 @@ const usage = `Usage: sb [--config PATH] COMMAND
 
   init                         Create standalone XDG configuration
   update [ID...]               Fetch subscriptions, validate, install, restart
+  bypass on|off               Toggle direct-only routing
+  tunnel off|on               Toggle template TUN inbound
   prepare                      Render from cache; no fetch or restart
   apply                        Render from cache and restart
   list | status                Inspect running selection and public manifest
@@ -96,7 +98,7 @@ func execute(ctx context.Context, settings app.Settings, args []string) error {
 	api := singbox.Clash{URL: settings.APIURL}
 	command, rest := args[0], args[1:]
 	switch command {
-	case "update", "subscription", "prepare", "apply":
+	case "update", "subscription", "prepare", "apply", "bypass", "tunnel":
 		return mutate(ctx, manager, command, rest)
 	case "use", "pin", "unpin", "test", "config", "check":
 		return clientCommand(ctx, manager, api, command, rest)
@@ -112,6 +114,11 @@ func execute(ctx context.Context, settings app.Settings, args []string) error {
 
 func mutate(ctx context.Context, manager app.Manager, command string, rest []string) error {
 	switch command {
+	case "bypass", "tunnel":
+		if len(rest) != 1 || (rest[0] != "on" && rest[0] != "off") {
+			return fmt.Errorf("usage: sb %s on|off", command)
+		}
+		return manager.SetMode(ctx, command, rest[0] == "on")
 	case "update":
 		return manager.Update(ctx, rest)
 	case "subscription":
@@ -151,12 +158,37 @@ func clientCommand(ctx context.Context, manager app.Manager, api singbox.Clash, 
 			return err
 		}
 
+		mode, err := manager.Settings.LoadMode()
+		if err != nil {
+			return err
+		}
+		if mode.Bypass {
+			fmt.Println("pin saved; bypass remains direct-only; run sb bypass off to restore proxy selection")
+			return nil
+		}
 		if err := api.Use(ctx, choice); err != nil {
 			return fmt.Errorf("pin/config saved, but live selection could not be changed: %w", err)
 		}
 		fmt.Println("selected", choice)
 		return nil
 	case "use":
+		manifest, err := manager.Manifest()
+		if err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		if manifest.Mode == nil {
+			mode, modeErr := manager.Settings.LoadMode()
+			if modeErr != nil {
+				return fmt.Errorf("installed mode unavailable: %w", modeErr)
+			}
+			if os.IsNotExist(err) {
+				return fmt.Errorf("installed mode unavailable: no manifest")
+			}
+			manifest.Mode = &mode
+		}
+		if manifest.Mode.Bypass {
+			return fmt.Errorf("direct-only bypass enabled; run sb bypass off before sb use")
+		}
 		if len(rest) > 1 {
 			return fmt.Errorf("use accepts at most one tag")
 		}
@@ -250,6 +282,10 @@ func inspect(ctx context.Context, manager app.Manager, api singbox.Clash, comman
 	}
 	selected, err := api.Selector(ctx)
 	if err != nil {
+		if command == "status" {
+			fmt.Println("live selector: unavailable")
+			return nil
+		}
 		return err
 	}
 	if command == "status" {
@@ -267,7 +303,7 @@ func printPin(manifest app.Manifest) {
 	case manifest.PinnedTag == "":
 		fmt.Println("pin: none")
 	case manifest.PinActive:
-		fmt.Println("pin:", manifest.PinnedTag, "(active)")
+		fmt.Println("pin:", manifest.PinnedTag, "(available; not necessarily selected live)")
 	default:
 		fmt.Println("pin:", manifest.PinnedTag, "(stale/inactive)")
 	}
@@ -292,6 +328,24 @@ func printSelection(manifest app.Manifest, selected singbox.Selector) {
 }
 
 func status(settings app.Settings, manifest app.Manifest, missing bool) error {
+	mode, err := settings.LoadMode()
+	switch {
+	case err == nil:
+		fmt.Printf("requested mode: bypass=%t tunnel_off=%t\n", mode.Bypass, mode.TunnelOff)
+	case os.IsPermission(err):
+		fmt.Println("requested mode: unavailable")
+	default:
+		return err
+	}
+	switch {
+	case missing:
+		fmt.Println("installed mode: missing")
+	case manifest.Mode == nil:
+		fmt.Println("installed mode: unknown (legacy manifest)")
+	default:
+		fmt.Printf("installed mode: bypass=%t tunnel_off=%t\n", manifest.Mode.Bypass, manifest.Mode.TunnelOff)
+	}
+	fmt.Println("active routing/interception: unverified (live selector is separate)")
 	health, err := settings.LoadHealth()
 	if err != nil {
 		return err

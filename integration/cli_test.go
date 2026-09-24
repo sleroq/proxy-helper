@@ -744,6 +744,107 @@ func TestStandaloneInit(t *testing.T) {
 	}
 }
 
+func TestModes(t *testing.T) {
+	f := newFixture(t)
+	f.config["restart_command"] = []string{binary, "--config", filepath.Join(f.dir, "config.json"), "prepare"}
+	f.write("config.json", f.config)
+	f.run("", true, "bypass", "on")
+	config := f.read("state/config.json")
+	if singbox, err := exec.LookPath("sing-box"); err == nil {
+		candidate := filepath.Join(t.TempDir(), "bypass.json")
+		if err := os.WriteFile(candidate, []byte(config), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if output, err := exec.Command(singbox, "check", "-c", candidate).CombinedOutput(); err != nil {
+			t.Fatalf("sing-box check bypass candidate: %v\n%s", err, output)
+		}
+	}
+	if !strings.Contains(config, `"default": "direct"`) || !strings.Contains(config, `"final": "sb-local"`) {
+		t.Fatal(config)
+	}
+	if output := f.run("", false, "bypass", "off"); !strings.Contains(output, "has no cached nodes") {
+		t.Fatal(output)
+	}
+	if output := f.run("", false, "use", "a"); !strings.Contains(output, "sb bypass off") {
+		t.Fatal(output)
+	}
+	f.run("", true, "prepare")
+	f.run("", true, "update")
+	if output := f.run("", false, "tunnel", "off"); !strings.Contains(output, "no TUN") {
+		t.Fatal(output)
+	}
+	if output := f.run("", true, "pin", "b"); !strings.Contains(output, "bypass remains direct-only") {
+		t.Fatal(output)
+	}
+	if status := f.run("", true, "status"); !strings.Contains(status, "requested mode: bypass=true") || !strings.Contains(status, "installed mode: bypass=true") || !strings.Contains(status, "active routing/interception: unverified") {
+		t.Fatal(status)
+	}
+	f.run("", true, "bypass", "off")
+	if config := f.read("state/config.json"); !strings.Contains(config, `"default": "b"`) {
+		t.Fatal("saved pin not restored")
+	}
+	f.write("template.json", json.RawMessage(`{"inbounds":[{"type":"tun","tag":"tun","address":["198.18.0.1/30"],"auto_route":true},{"type":"mixed","tag":"mixed","listen":"127.0.0.1","listen_port":2080}],"route":{"final":"proxy","rules":[{"domain_suffix":["example.net"],"action":"route","outbound":"proxy"},{"action":"sniff"},{"protocol":"dns","action":"hijack-dns"}]},"dns":{"servers":[{"type":"https","tag":"remote","server":"1.1.1.1","detour":"proxy"}],"rules":[{"domain_suffix":["example.net"],"action":"route","server":"remote"}],"final":"remote"}}`))
+	f.run("", true, "tunnel", "off")
+	f.run("", true, "bypass", "on")
+	config = f.read("state/config.json")
+	if strings.Contains(config, "secret-one") || strings.Contains(config, "secret-two") || strings.Contains(config, `"type": "urltest"`) {
+		t.Fatal("direct-only bypass retained unused proxy outbounds")
+	}
+	var installed struct {
+		Inbounds []struct{ Type string }
+		Route    struct {
+			Final, DefaultDomainResolver string `json:"-"`
+		}
+		DNS struct {
+			Final   string
+			Rules   []json.RawMessage
+			Servers []struct{ Type string }
+		}
+		Outbounds []struct {
+			Tag     string
+			Choices []string `json:"outbounds"`
+		}
+	}
+	if err := json.Unmarshal([]byte(config), &installed); err != nil {
+		t.Fatal(err)
+	}
+	if len(installed.Inbounds) != 1 || installed.Inbounds[0].Type != "mixed" || installed.DNS.Final != "sb-local" || len(installed.DNS.Rules) != 0 || len(installed.DNS.Servers) != 1 || installed.DNS.Servers[0].Type != "local" {
+		t.Fatal(config)
+	}
+	f.run("", true, "tunnel", "on")
+	config = f.read("state/config.json")
+	if !strings.Contains(config, `"type": "tun"`) {
+		t.Fatal("TUN not restored")
+	}
+	if singbox, err := exec.LookPath("sing-box"); err == nil {
+		candidate := filepath.Join(t.TempDir(), "tun-bypass.json")
+		if err := os.WriteFile(candidate, []byte(config), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if output, err := exec.Command(singbox, "check", "-c", candidate).CombinedOutput(); err != nil {
+			t.Fatalf("sing-box check TUN bypass candidate: %v\n%s", err, output)
+		}
+	}
+}
+
+func TestModeRequiresRestartAndReportsFailure(t *testing.T) {
+	f := newFixture(t)
+	if output := f.run("", false, "bypass", "on"); !strings.Contains(output, "restart_command") {
+		t.Fatal(output)
+	}
+	if _, err := os.Stat(filepath.Join(f.dir, "state", "mode.json")); !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	f.config["restart_command"] = []string{helper, "restart"}
+	f.write("config.json", f.config)
+	if output := f.run("", false, "bypass", "on"); !strings.Contains(output, "configuration installed, but service restart failed") {
+		t.Fatal(output)
+	}
+	if status := f.run("", true, "status"); !strings.Contains(status, "requested mode: bypass=true") || !strings.Contains(status, "installed mode: bypass=true") || !strings.Contains(status, "unverified") {
+		t.Fatal(status)
+	}
+}
+
 func TestRealConverterAndCore(t *testing.T) {
 	core, converter := os.Getenv("SB_REAL_CORE"), os.Getenv("SB_REAL_CONVERTER")
 	if core == "" || converter == "" {
@@ -776,4 +877,57 @@ func TestRealConverterAndCore(t *testing.T) {
 	f.run("", true, "subscription", "auto", "two", "--enabled", "false")
 	f.run("", true, "prepare")
 	f.run("", true, "check")
+}
+
+func TestPrivateModeAndConfigUnavailable(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file permissions")
+	}
+	f := newFixture(t)
+	f.run("", true, "update")
+	for _, name := range []string{"mode.json", "config.json"} {
+		path := filepath.Join(f.dir, "state", name)
+		if name == "mode.json" {
+			if err := os.WriteFile(path, []byte(`{"bypass":false}`), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := os.Chmod(path, 0000); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(path, 0600) })
+	}
+	if output := f.run("", true, "status"); !strings.Contains(output, "requested mode: unavailable") || !strings.Contains(output, "installed mode: bypass=false") {
+		t.Fatal(output)
+	}
+	f.run("", true, "use", "a")
+	manifestPath := filepath.Join(f.dir, "state", "subscription.json")
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest map[string]any
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	manifest["mode"] = map[string]any{"bypass": true}
+	data, err = json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifestPath, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if output := f.run("", false, "use", "a"); !strings.Contains(output, "sb bypass off") {
+		t.Fatal(output)
+	}
+	if output := f.run("", true, "status"); !strings.Contains(output, "installed mode: bypass=true") {
+		t.Fatal(output)
+	}
+	if err := os.Remove(manifestPath); err != nil {
+		t.Fatal(err)
+	}
+	if output := f.run("", false, "use", "a"); !strings.Contains(output, "installed mode unavailable") {
+		t.Fatal(output)
+	}
 }

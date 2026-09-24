@@ -43,6 +43,10 @@ sb use                           # live-only picker (requires stdin/stdout TTY)
 sb use 'a node tag'              # live-only, scriptable
 sb pin 'a node tag'              # persist a leaf and select it live
 sb unpin                         # restore automatic/default selection
+sb bypass on                     # direct routing + local DNS inside sing-box
+sb bypass off                    # restore proxy routing and saved selection
+sb tunnel off                    # stop TUN interception; keep mixed proxy running
+sb tunnel on                     # restore TUN interception
 sb status
 sb config                         # best-effort redaction; file permissions apply
 sudo sb config --raw               # explicitly root-only
@@ -156,6 +160,35 @@ while retaining its cache. Empty URLTest groups are omitted. If all automatic
 candidates are excluded, the selector defaults to its first manual node. If no
 nodes remain at all, application fails rather than silently switching to direct.
 Static/extra outbounds remain automatic candidates in this release.
+
+## Bypass, interception, and fail-closed
+
+`sb bypass on` routes traffic **entering sing-box** directly, including DNS
+queries handled by sing-box. It renders a direct-only selector (no proxy nodes
+or URLTest needed), a direct route final, and only a local DNS resolver;
+remote DNS servers and DNS routing rules are omitted while bypassed so they
+cannot send queries via a proxy detour. Custom templates that force unsupported outbound routes
+are rejected rather than silently bypassed. `sb bypass off` restores the
+normal proxy route and saved pin/automatic choice; without any proxy nodes it
+fails and leaves bypass intact. Selecting a proxy with `sb use` does **not**
+turn bypass off. This does not change the OS resolver or stop applications' own
+DNS-over-HTTPS connections.
+
+`sb tunnel off` instead removes recognized TUN inbounds from the generated
+config and restarts sing-box; mixed proxy inbounds and their normal routing
+remain. `sb tunnel on` restores the template's TUN. Standalone templates without
+TUN cannot use this toggle. Both controls persist privately in
+`state_dir/mode.json` (0600) through `prepare`, updates, and restarts; they
+require the state owner's authorization and a configured `restart_command`.
+A failed restart can leave the installed config different from the running
+service; `status` shows requested/installed modes, **not verified host routing**.
+On NixOS/macOS, use the authorized system service restart configured by the
+platform module. Neither control stops the service or changes firewall policy.
+
+**Neither bypass nor tunnel-off is a kill switch.** If sing-box fails or its TUN
+is removed, the OS may send traffic directly. A real fail-closed mode requires
+separately managed OS firewall rules on each host and is not implemented here.
+Disabling subscriptions is not a way to disable transparent interception.
 
 ## Nix integration
 

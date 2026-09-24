@@ -31,6 +31,7 @@ type SourceInfo struct {
 	Unavailable bool   `json:"unavailable"`
 }
 type Manifest struct {
+	Mode       *Mode        `json:"mode,omitempty"`
 	UpdatedAt  string       `json:"updatedAt"`
 	Nodes      []NodeInfo   `json:"nodes"`
 	ExtraNodes []NodeInfo   `json:"extraNodes,omitempty"`

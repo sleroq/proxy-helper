@@ -174,6 +174,14 @@ func (m Manager) buildAndInstall(ctx context.Context, sources []subscription.Sou
 }
 
 func (m Manager) buildCandidate(ctx context.Context, sources []subscription.Source, cache Cache, pin string) (json.RawMessage, Cache, Manifest, error) {
+	mode, err := m.Settings.LoadMode()
+	if err != nil {
+		return nil, nil, Manifest{}, err
+	}
+	return m.buildCandidateWithMode(ctx, sources, cache, pin, mode, false)
+}
+
+func (m Manager) buildCandidateWithMode(ctx context.Context, sources []subscription.Source, cache Cache, pin string, mode Mode, tunnelCommand bool) (json.RawMessage, Cache, Manifest, error) {
 	s := m.Settings
 	template, err := os.ReadFile(s.TemplateFile)
 	if err != nil {
@@ -183,11 +191,12 @@ func (m Manager) buildCandidate(ctx context.Context, sources []subscription.Sour
 	if err != nil {
 		return nil, nil, Manifest{}, err
 	}
-	groups, retained, manifest, err := assembleManifest(sources, cache)
+	groups, retained, manifest, err := assembleManifest(sources, cache, mode.Bypass)
 	if err != nil {
 		return nil, nil, Manifest{}, err
 	}
 
+	manifest.Mode = &mode
 	manifest.PinnedTag = pin
 	for _, group := range groups {
 		for _, node := range group.Nodes {
@@ -207,6 +216,9 @@ func (m Manager) buildCandidate(ctx context.Context, sources []subscription.Sour
 		Tolerance:   s.Tolerance,
 		RoutingMark: s.RoutingMark,
 		PinnedLeaf:  pin,
+		Bypass:      mode.Bypass,
+		TunnelOff:   mode.TunnelOff,
+		TunnelMode:  tunnelCommand,
 	}
 	config, err := singbox.Compose(template, groups, extra, options)
 	if err != nil {
@@ -249,7 +261,7 @@ func (s Settings) pruneHealth(sources []subscription.Source) error {
 	return s.WriteHealth(health)
 }
 
-func assembleManifest(sources []subscription.Source, cache Cache) ([]singbox.Group, Cache, Manifest, error) {
+func assembleManifest(sources []subscription.Source, cache Cache, bypass bool) ([]singbox.Group, Cache, Manifest, error) {
 	var groups []singbox.Group
 	manifest := Manifest{Nodes: []NodeInfo{}}
 	retained := Cache{}
@@ -261,7 +273,7 @@ func assembleManifest(sources []subscription.Source, cache Cache) ([]singbox.Gro
 		if source.Disabled {
 			continue
 		}
-		if !ok {
+		if !ok && !bypass {
 			return nil, nil, Manifest{}, fmt.Errorf("subscription %s has no cached nodes; run sb update %s", source.ID, source.ID)
 		}
 

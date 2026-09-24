@@ -36,6 +36,9 @@ type Options struct {
 	Tolerance   uint
 	RoutingMark uint
 	PinnedLeaf  string
+	Bypass      bool
+	TunnelOff   bool
+	TunnelMode  bool
 }
 
 type outboundSet struct {
@@ -114,17 +117,21 @@ func Compose(template json.RawMessage, groups []Group, extra []Outbound, options
 	}
 
 	set := outboundSet{tags: map[string]bool{"direct": true, "auto": true, "proxy": true}}
-	if err := set.addLeaves(groups, extra); err != nil {
-		return nil, err
-	}
-
-	for _, group := range groups {
-		if err := set.addGroup(group, options); err != nil {
+	if !options.Bypass {
+		if err := set.addLeaves(groups, extra); err != nil {
 			return nil, err
+		}
+		for _, group := range groups {
+			if err := set.addGroup(group, options); err != nil {
+				return nil, err
+			}
 		}
 	}
 	choices := slices.Concat(set.groupTags, set.leaves)
-	if len(set.automatic) > 0 {
+	if options.Bypass {
+		choices = []string{"direct"}
+	}
+	if len(set.automatic) > 0 && !options.Bypass {
 		set.nodes = append(set.nodes, urltest("auto", set.automatic, options))
 		choices = append([]string{"auto"}, choices...)
 	}
@@ -133,7 +140,7 @@ func Compose(template json.RawMessage, groups []Group, extra []Outbound, options
 	}
 
 	selected := choices[0]
-	if slices.Contains(set.leaves, options.PinnedLeaf) {
+	if !options.Bypass && slices.Contains(set.leaves, options.PinnedLeaf) {
 		selected = options.PinnedLeaf
 	}
 	selector := Outbound{
@@ -142,6 +149,9 @@ func Compose(template json.RawMessage, groups []Group, extra []Outbound, options
 	}
 	direct := Outbound{"type": field("direct"), "tag": field("direct")}
 	set.nodes = append(set.nodes, selector, direct)
+	if err := applyMode(root, options); err != nil {
+		return nil, err
+	}
 	return install(root, set.nodes, options.RoutingMark)
 }
 

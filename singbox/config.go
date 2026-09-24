@@ -116,24 +116,9 @@ func Compose(template json.RawMessage, groups []Group, extra []Outbound, options
 		return nil, fmt.Errorf("template must be a JSON object")
 	}
 
-	set := outboundSet{tags: map[string]bool{"direct": true, "auto": true, "proxy": true}}
-	if !options.Bypass {
-		if err := set.addLeaves(groups, extra); err != nil {
-			return nil, err
-		}
-		for _, group := range groups {
-			if err := set.addGroup(group, options); err != nil {
-				return nil, err
-			}
-		}
-	}
-	choices := slices.Concat(set.groupTags, set.leaves)
-	if options.Bypass {
-		choices = []string{"direct"}
-	}
-	if len(set.automatic) > 0 && !options.Bypass {
-		set.nodes = append(set.nodes, urltest("auto", set.automatic, options))
-		choices = append([]string{"auto"}, choices...)
+	set, choices, err := composeOutbounds(groups, extra, options)
+	if err != nil {
+		return nil, err
 	}
 	if len(choices) == 0 {
 		return nil, fmt.Errorf("no selectable outbounds; keep at least one enabled subscription or extra outbound")
@@ -153,6 +138,29 @@ func Compose(template json.RawMessage, groups []Group, extra []Outbound, options
 		return nil, err
 	}
 	return install(root, set.nodes, options.RoutingMark)
+}
+
+func composeOutbounds(groups []Group, extra []Outbound, options Options) (outboundSet, []string, error) {
+	set := outboundSet{tags: map[string]bool{"direct": true, "auto": true, "proxy": true}}
+	if !options.Bypass {
+		if err := set.addLeaves(groups, extra); err != nil {
+			return set, nil, err
+		}
+		for _, group := range groups {
+			if err := set.addGroup(group, options); err != nil {
+				return set, nil, err
+			}
+		}
+	}
+	choices := slices.Concat(set.groupTags, set.leaves)
+	if options.Bypass {
+		choices = []string{"direct"}
+	}
+	if len(set.automatic) > 0 && !options.Bypass {
+		set.nodes = append(set.nodes, urltest("auto", set.automatic, options))
+		choices = append([]string{"auto"}, choices...)
+	}
+	return set, choices, nil
 }
 
 // Legacy installs an explicitly managed complete outbound array.

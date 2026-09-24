@@ -36,9 +36,18 @@ func (m Manager) SetMode(ctx context.Context, command string, enabled bool) erro
 	if err != nil {
 		return err
 	}
+	err = m.setModeLocked(ctx, command, enabled)
+	_ = lock.Close()
+	if err != nil {
+		return err
+	}
+	return m.Restart(ctx)
+}
+
+func (m Manager) setModeLocked(ctx context.Context, command string, enabled bool) error {
+	s := m.Settings
 	mode, err := s.LoadMode()
 	if err != nil {
-		_ = lock.Close()
 		return err
 	}
 	if command == "bypass" {
@@ -48,17 +57,14 @@ func (m Manager) SetMode(ctx context.Context, command string, enabled bool) erro
 	}
 	catalog, err := subscription.Load(s.Stores, s.OverridesFile)
 	if err != nil {
-		_ = lock.Close()
 		return err
 	}
 	cache, err := s.LoadCache()
 	if err != nil {
-		_ = lock.Close()
 		return err
 	}
 	pin, err := s.loadPin()
 	if err != nil {
-		_ = lock.Close()
 		return err
 	}
 	config, retained, manifest, err := m.buildCandidateWithMode(ctx, catalog.Sources(), cache, pin, mode, command == "tunnel")
@@ -68,9 +74,5 @@ func (m Manager) SetMode(ctx context.Context, command string, enabled bool) erro
 	if err == nil {
 		err = files.Write(filepath.Join(s.StateDir, "mode.json"), mode, 0600)
 	}
-	_ = lock.Close()
-	if err != nil {
-		return err
-	}
-	return m.Restart(ctx)
+	return err
 }

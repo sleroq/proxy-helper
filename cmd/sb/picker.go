@@ -14,7 +14,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/term"
 	"github.com/sleroq/sb/internal/app"
-	"github.com/sleroq/sb/singbox"
+	"github.com/sleroq/sb/internal/backend"
 )
 
 type pickerRow struct{ tag, source, server string }
@@ -276,7 +276,7 @@ func pickerMetadata(manifest app.Manifest) (map[string]app.NodeInfo, map[string]
 	return metadata, groups
 }
 
-func newPicker(selected singbox.Selector, manifest app.Manifest, metadata map[string]app.NodeInfo, groups map[string]bool) picker {
+func newPicker(selected backend.Selection, manifest app.Manifest, metadata map[string]app.NodeInfo, groups map[string]bool) picker {
 	m := picker{
 		now: selected.Now, pin: manifest.PinnedTag, active: manifest.PinActive,
 		width: 80, height: 24,
@@ -298,7 +298,7 @@ func newPicker(selected singbox.Selector, manifest app.Manifest, metadata map[st
 	return m
 }
 
-func startPicker(ctx context.Context, manager app.Manager, api singbox.Clash, m picker) (*tea.Program, context.CancelFunc) {
+func startPicker(ctx context.Context, manager app.Manager, api backend.Controller, m picker) (*tea.Program, context.CancelFunc) {
 	probeCtx, cancel := context.WithCancel(ctx)
 	// A separate goroutine keeps the HTTP probe out of Bubble Tea's command lifecycle;
 	// quitting never waits for a slow server to finish its response.
@@ -324,7 +324,7 @@ func startPicker(ctx context.Context, manager app.Manager, api singbox.Clash, m 
 	return program, cancel
 }
 
-func pick(ctx context.Context, manager app.Manager, api singbox.Clash) (string, error) {
+func pick(ctx context.Context, manager app.Manager, api backend.Controller) (string, error) {
 	if !term.IsTerminal(os.Stdin.Fd()) || !term.IsTerminal(os.Stdout.Fd()) {
 		return "", errors.New("use requires a tag without a terminal")
 	}

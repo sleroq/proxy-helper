@@ -26,6 +26,9 @@ func (s Settings) LoadMode() (Mode, error) {
 
 func (m Manager) SetMode(ctx context.Context, command string, enabled bool) error {
 	s := m.Settings
+	if err := m.Backend.Mode(command); err != nil {
+		return err
+	}
 	if s.LegacyOutboundsFile != "" {
 		return fmt.Errorf("%s unavailable with legacy outbounds", command)
 	}

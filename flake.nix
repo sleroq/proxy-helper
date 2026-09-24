@@ -1,5 +1,5 @@
 {
-  description = "Subscription management and sing-box control";
+  description = "Subscription management and proxy client control";
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
   outputs =
     { self, nixpkgs }:
@@ -25,7 +25,7 @@
             runHook postCheck
           '';
           meta = {
-            description = "Subscription management and sing-box control";
+            description = "Subscription management and proxy client control";
             mainProgram = "sb";
             platforms = systems;
           };
@@ -35,6 +35,10 @@
       overlays.default = final: _: { sb = package final; };
       nixosModules.default = { ... }: {
         imports = [ ./nix/modules/nixos.nix ];
+        _module.args.sbFlake = self;
+      };
+      nixosModules.mihomo = { ... }: {
+        imports = [ ./nix/modules/mihomo.nix ];
         _module.args.sbFlake = self;
       };
       darwinModules.default = { ... }: {

@@ -11,11 +11,14 @@ import (
 	"time"
 
 	"github.com/sleroq/sb/internal/files"
-	"github.com/sleroq/sb/singbox"
+	"github.com/sleroq/sb/proxy"
 	"github.com/sleroq/sb/subscription"
 )
 
-type Manager struct{ Settings Settings }
+type Manager struct {
+	Settings Settings
+	Backend  Backend
+}
 
 // Update attempts every requested source and installs a validated mixed snapshot
 // when at least one fetch succeeds.
@@ -57,7 +60,7 @@ func (m Manager) updateLocked(ctx context.Context, ids []string) (string, error)
 	if err != nil {
 		return "", err
 	}
-	updated, stale, unavailable := s.fetchSources(ctx, sources, ids, cache, health)
+	updated, stale, unavailable := m.fetchSources(ctx, sources, ids, cache, health)
 	if err := s.WriteHealth(health); err != nil {
 		return "", err
 	}
@@ -87,9 +90,8 @@ func validateRequestedSources(sources []subscription.Source, ids []string) error
 	return nil
 }
 
-func (s Settings) fetchSources(ctx context.Context, sources []subscription.Source, ids []string, cache Cache, health Health) (updated, stale, unavailable []string) {
-	native := subscription.Native{}
-	converter := subscription.Converter{Binary: s.Converter}
+func (m Manager) fetchSources(ctx context.Context, sources []subscription.Source, ids []string, cache Cache, health Health) (updated, stale, unavailable []string) {
+	s := m.Settings
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	for _, source := range sources {
 		if source.Disabled || (len(ids) > 0 && !slices.Contains(ids, source.ID)) {
@@ -101,13 +103,7 @@ func (s Settings) fetchSources(ctx context.Context, sources []subscription.Sourc
 		if source.ExcludeNodeNames == "" {
 			source.ExcludeNodeNames = s.ExcludeNodeNames
 		}
-		var nodes []singbox.Outbound
-		var err error
-		if s.Converter != "" {
-			nodes, err = converter.Fetch(ctx, source)
-		} else {
-			nodes, err = native.Fetch(ctx, source)
-		}
+		nodes, err := m.Backend.Fetch(ctx, source)
 		if err != nil {
 			health[source.ID] = SourceHealth{AttemptedAt: now, Error: err.Error()}
 			if _, ok := cache[source.ID]; !ok {
@@ -141,11 +137,11 @@ func (m Manager) Prepare(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		var nodes []singbox.Outbound
+		var nodes []proxy.Node
 		if err := files.Read(s.LegacyOutboundsFile, &nodes); err != nil {
 			return err
 		}
-		config, err := singbox.Legacy(template, nodes, s.RoutingMark)
+		config, err := m.Backend.Legacy(template, nodes, s.RoutingMark)
 		if err != nil {
 			return err
 		}
@@ -206,7 +202,7 @@ func (m Manager) buildCandidateWithMode(ctx context.Context, sources []subscript
 	manifest.Mode = &mode
 	manifest.addPinAndExtra(pin, groups, extra)
 
-	options := singbox.Options{
+	options := Options{
 		URL:         s.TestURL,
 		Interval:    s.TestInterval,
 		Tolerance:   s.Tolerance,
@@ -216,7 +212,7 @@ func (m Manager) buildCandidateWithMode(ctx context.Context, sources []subscript
 		TunnelOff:   mode.TunnelOff,
 		TunnelMode:  tunnelCommand,
 	}
-	config, err := singbox.Compose(template, groups, extra, options)
+	config, err := m.Backend.Compose(template, groups, extra, options)
 	if err != nil {
 		return nil, nil, Manifest{}, err
 	}
@@ -226,7 +222,7 @@ func (m Manager) buildCandidateWithMode(ctx context.Context, sources []subscript
 	return config, retained, manifest, nil
 }
 
-func (manifest *Manifest) addPinAndExtra(pin string, groups []singbox.Group, extra []singbox.Outbound) {
+func (manifest *Manifest) addPinAndExtra(pin string, groups []proxy.Group, extra []proxy.Node) {
 	manifest.PinnedTag = pin
 	for _, group := range groups {
 		for _, node := range group.Nodes {
@@ -241,13 +237,13 @@ func (manifest *Manifest) addPinAndExtra(pin string, groups []singbox.Group, ext
 	}
 }
 
-func (s Settings) loadExtraOutbounds() ([]singbox.Outbound, error) {
-	var extra []singbox.Outbound
+func (s Settings) loadExtraOutbounds() ([]proxy.Node, error) {
+	var extra []proxy.Node
 	for _, path := range []string{s.ExtraOutboundsFile, s.StaticOutboundsFile} {
 		if path == "" {
 			continue
 		}
-		var nodes []singbox.Outbound
+		var nodes []proxy.Node
 		if err := files.Read(path, &nodes); err != nil {
 			return nil, err
 		}
@@ -272,8 +268,8 @@ func (s Settings) pruneHealth(sources []subscription.Source) error {
 	return s.WriteHealth(health)
 }
 
-func assembleManifest(sources []subscription.Source, cache Cache, bypass bool) ([]singbox.Group, Cache, Manifest, error) {
-	var groups []singbox.Group
+func assembleManifest(sources []subscription.Source, cache Cache, bypass bool) ([]proxy.Group, Cache, Manifest, error) {
+	var groups []proxy.Group
 	manifest := Manifest{Nodes: []NodeInfo{}}
 	retained := Cache{}
 	for _, source := range sources {
@@ -294,7 +290,7 @@ func assembleManifest(sources []subscription.Source, cache Cache, bypass bool) (
 		}
 		manifest.Sources = append(manifest.Sources, info)
 
-		group := singbox.Group{Name: source.ID, Nodes: entry.Nodes}
+		group := proxy.Group{Name: source.ID, Nodes: entry.Nodes}
 		last, _ := time.Parse(time.RFC3339Nano, manifest.UpdatedAt)
 		updated, _ := time.Parse(time.RFC3339Nano, entry.UpdatedAt)
 		if updated.After(last) {
@@ -331,11 +327,23 @@ func (m Manager) Validate(ctx context.Context, config json.RawMessage) error {
 	if err := f.Close(); err != nil {
 		return err
 	}
-	if err := exec.CommandContext(ctx, m.Settings.SingBox, "check", "-c", f.Name()).Run(); err != nil {
-		return fmt.Errorf("sing-box rejected candidate configuration " +
-			"(diagnostics suppressed because they may contain credentials)")
+	client := m.Backend
+	binary, args := client.CheckCommand(f.Name(), m.Settings.StateDir)
+	if err := exec.CommandContext(ctx, binary, args...).Run(); err != nil {
+		return fmt.Errorf("%s rejected candidate configuration "+
+			"(diagnostics suppressed because they may contain credentials)", client.Name())
 	}
 	return nil
+}
+
+// Check deliberately forwards native diagnostics to the caller. Unlike update
+// validation, it is an explicit inspection command and may reveal credentials.
+func (m Manager) Check(ctx context.Context) error {
+	binary, args := m.Backend.CheckCommand(m.Settings.ConfigPath(), m.Settings.StateDir)
+	child := exec.CommandContext(ctx, binary, args...)
+	child.Stdout = os.Stdout
+	child.Stderr = os.Stderr
+	return child.Run()
 }
 
 func (m Manager) Restart(ctx context.Context) error {

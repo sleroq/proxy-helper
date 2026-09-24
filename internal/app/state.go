@@ -8,13 +8,13 @@ import (
 	"syscall"
 
 	"github.com/sleroq/sb/internal/files"
-	"github.com/sleroq/sb/singbox"
+	"github.com/sleroq/sb/proxy"
 )
 
 type CachedSource struct {
-	UpdatedAt   string             `json:"updated_at"`
-	Nodes       []singbox.Outbound `json:"nodes"`
-	Unavailable bool               `json:"unavailable,omitempty"`
+	UpdatedAt   string       `json:"updated_at"`
+	Nodes       []proxy.Node `json:"nodes"`
+	Unavailable bool         `json:"unavailable,omitempty"`
 }
 type Cache map[string]CachedSource
 type NodeInfo struct {
@@ -100,7 +100,7 @@ func (s Settings) LoadCache() (Cache, error) {
 func (s Settings) loadLegacyCache(cache Cache) (Cache, error) {
 	// Migrate the original shell CLI cache without fetching or copying secrets
 	// into a public file. Legacy files remain intact until a successful commit.
-	var nodes []singbox.Outbound
+	var nodes []proxy.Node
 	if err := files.Read(filepath.Join(s.StateDir, "subscription-outbounds.json"), &nodes); err != nil {
 		if os.IsNotExist(err) {
 			return cache, nil
@@ -119,8 +119,8 @@ func (s Settings) loadLegacyCache(cache Cache) (Cache, error) {
 	return attributeLegacyNodes(cache, nodes, mapping)
 }
 
-func attributeLegacyNodes(cache Cache, nodes []singbox.Outbound, mapping map[string][]string) (Cache, error) {
-	byTag := map[string]singbox.Outbound{}
+func attributeLegacyNodes(cache Cache, nodes []proxy.Node, mapping map[string][]string) (Cache, error) {
+	byTag := map[string]proxy.Node{}
 	for _, node := range nodes {
 		tag := node.String("tag")
 		if tag == "" || byTag[tag] != nil {

@@ -6,10 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 
 	"github.com/sleroq/sb/internal/files"
-	"github.com/sleroq/sb/singbox"
 	"github.com/sleroq/sb/subscription"
 )
 
@@ -50,14 +48,15 @@ func (m Manager) Pin(ctx context.Context, tag string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return s.installPin(tag, config, retained, manifest)
+	return m.installPin(tag, config, retained, manifest)
 }
 
-func (s Settings) installPin(tag string, config json.RawMessage, retained Cache, manifest Manifest) (string, error) {
+func (m Manager) installPin(tag string, config json.RawMessage, retained Cache, manifest Manifest) (string, error) {
+	s := m.Settings
 	if tag != "" && !manifest.PinActive {
 		return "", fmt.Errorf("tag %q is not an available leaf outbound", tag)
 	}
-	choice, err := selectorDefault(config)
+	choice, err := m.Backend.SelectorDefault(config)
 	if err != nil {
 		return "", err
 	}
@@ -68,18 +67,4 @@ func (s Settings) installPin(tag string, config json.RawMessage, retained Cache,
 		return "", err
 	}
 	return choice, nil
-}
-
-func selectorDefault(config json.RawMessage) (string, error) {
-	var root struct {
-		Outbounds []singbox.Outbound `json:"outbounds"`
-	}
-	if err := json.Unmarshal(config, &root); err != nil {
-		return "", err
-	}
-	i := slices.IndexFunc(root.Outbounds, func(o singbox.Outbound) bool { return o.String("tag") == "proxy" })
-	if i < 0 {
-		return "", fmt.Errorf("generated selector missing")
-	}
-	return root.Outbounds[i].String("default"), nil
 }

@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/sleroq/sb/internal/files"
-	"github.com/sleroq/sb/singbox"
+	"github.com/sleroq/sb/proxy"
 )
 
 // Converter adapts sing-box-sub's CLI. Child output and HTTP errors are not
@@ -23,7 +23,7 @@ type Converter struct {
 	Client *http.Client
 }
 
-func (c Converter) Fetch(ctx context.Context, source Source) ([]singbox.Outbound, error) {
+func (c Converter) Fetch(ctx context.Context, source Source) ([]proxy.Node, error) {
 	address, err := sourceAddress(source)
 	if err != nil {
 		return nil, err
@@ -69,7 +69,7 @@ func sourceAddress(source Source) (string, error) {
 // Parse converts a subscription body from any reader into native outbounds.
 // It does not fetch, read stores, or apply automatic-selection policy. The
 // source supplies only diagnostic identity and converter filter options.
-func (c Converter) Parse(ctx context.Context, body io.Reader, source Source) ([]singbox.Outbound, error) {
+func (c Converter) Parse(ctx context.Context, body io.Reader, source Source) ([]proxy.Node, error) {
 	dir, err := os.MkdirTemp("", "sb-convert-*")
 	if err != nil {
 		return nil, err
@@ -92,7 +92,7 @@ func (c Converter) Parse(ctx context.Context, body io.Reader, source Source) ([]
 	if err := command.Run(); err != nil {
 		return nil, fmt.Errorf("source %s: converter failed", source.ID)
 	}
-	var nodes []singbox.Outbound
+	var nodes []proxy.Node
 	if err := files.Read(output, &nodes); err != nil {
 		return nil, fmt.Errorf("source %s: invalid converter output", source.ID)
 	}
@@ -105,7 +105,7 @@ func (c Converter) Parse(ctx context.Context, body io.Reader, source Source) ([]
 	return nodes, nil
 }
 
-func validateServers(nodes []singbox.Outbound, id string) error {
+func validateServers(nodes []proxy.Node, id string) error {
 	for _, node := range nodes {
 		if _, ok := node["server"]; ok {
 			server := node.String("server")

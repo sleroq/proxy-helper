@@ -23,6 +23,8 @@ type Settings struct {
 	Tolerance           uint                 `json:"tolerance"`
 	RoutingMark         uint                 `json:"routing_mark,omitempty"`
 	SingBox             string               `json:"sing_box"`
+	Backend             string               `json:"backend,omitempty"`
+	Mihomo              string               `json:"mihomo,omitempty"`
 	Converter           string               `json:"converter"`
 	RestartCommand      []string             `json:"restart_command,omitempty"`
 	Stores              []subscription.Store `json:"stores"`
@@ -46,12 +48,13 @@ func DefaultConfig() (string, error) {
 func LoadSettings(path string) (Settings, error) {
 	s := Settings{
 		APIURL: "http://127.0.0.1:9090", TestURL: "https://www.gstatic.com/generate_204",
-		TestInterval: "5m", Tolerance: 50, SingBox: "sing-box",
+		TestInterval: "5m", Tolerance: 50, SingBox: "sing-box", Mihomo: "mihomo",
 		ExcludeProtocols: "ssr",
 	}
 	if err := files.Read(path, &s); err != nil {
 		return s, err
 	}
+
 	base, err := filepath.Abs(filepath.Dir(path))
 	if err != nil {
 		return s, err
@@ -71,39 +74,37 @@ func LoadSettings(path string) (Settings, error) {
 	for i := range s.Stores {
 		s.Stores[i].Path = resolve(s.Stores[i].Path)
 	}
+
 	if s.StateDir == "" || s.TemplateFile == "" {
 		return s, fmt.Errorf("state_dir and template_file are required")
 	}
 	return s, nil
 }
 
-// Init creates a non-TUN, unprivileged standalone setup. Explicitly opt into
-// system routing in the native template and service manager, not in this CLI.
-func Init(path string) error {
+// Init creates a non-TUN, unprivileged standalone setup. Explicitly opt
+// into system routing in the native template and service manager, not here.
+func Init(path, name string, template json.RawMessage) error {
 	if _, err := os.Stat(path); err == nil {
 		return fmt.Errorf("configuration already exists")
 	} else if !os.IsNotExist(err) {
 		return err
 	}
+
 	base := filepath.Dir(path)
 	s := Settings{
 		TemplateFile: "template.json", StateDir: "state", APIURL: "http://127.0.0.1:9090",
 		TestURL: "https://www.gstatic.com/generate_204", TestInterval: "5m", Tolerance: 50,
-		SingBox: "sing-box", ExcludeProtocols: "ssr",
+		SingBox: "sing-box", Mihomo: "mihomo", Backend: name, ExcludeProtocols: "ssr",
 		Stores:        []subscription.Store{{Name: "local", Path: "subscriptions.json", Writable: true}},
 		OverridesFile: "overrides.json",
 	}
-	template := json.RawMessage(`{
-		"log":{"level":"warn"},
-		"inbounds":[{"type":"mixed","listen":"127.0.0.1","listen_port":2080}],
-		"route":{"final":"proxy"},
-		"experimental":{"clash_api":{"external_controller":"127.0.0.1:9090"}}
-	}`)
+
 	if _, err := os.Stat(filepath.Join(base, "template.json")); err == nil {
 		return fmt.Errorf("template.json already exists")
 	} else if !os.IsNotExist(err) {
 		return err
 	}
+
 	if err := files.Write(filepath.Join(base, "template.json"), template, 0644); err != nil {
 		return err
 	}

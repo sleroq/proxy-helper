@@ -1,9 +1,9 @@
 # sb
 
-A small Go CLI for subscription management and sing-box control on Linux and
+A small Go CLI for subscription management and sing-box or mihomo control on Linux and
 macOS. It is not a proxy or service supervisor. The default subscription parser is native Go;
 set `converter` to `sing-box-sub` to opt into the legacy adapter during migration.
-Configuration validation uses your installed `sing-box`.
+Configuration validation uses your installed proxy core (`sing-box` or `mihomo`).
 
 ## Standalone setup
 
@@ -38,6 +38,39 @@ shell or run the standalone setup as root.
 Use an existing private URL file instead of typing credentials into shell history.
 Source JSON also accepts `url`, for private stores managed outside Nix. `add`
 reads exactly one source object from stdin and never accepts URLs as CLI arguments.
+
+## Mihomo backend (standalone and NixOS)
+
+Install mihomo alongside `sb`, then initialize a **separate** user-owned profile:
+
+```sh
+sb --config "$HOME/.config/sb-mihomo/config.json" init --backend mihomo
+sb --config "$HOME/.config/sb-mihomo/config.json" subscription add <<'JSON'
+{"id":"main","url_file":"/absolute/private/subscription-url"}
+JSON
+sb --config "$HOME/.config/sb-mihomo/config.json" update
+mihomo -f "$HOME/.config/sb-mihomo/state/config.json" -d "$HOME/.config/sb-mihomo/state"
+```
+
+`sb --config ... list`, `use`, `pin`, `status`, `test`, `check`, and `apply`
+use the same source policy, private cache and Clash API workflow. Set
+`restart_command` to your own user-service restart argv to activate updates;
+without it, restart mihomo manually. The generated configuration is JSON (valid
+mihomo YAML), with a loopback mixed proxy at 2080, loopback API at 9090,
+`MATCH,proxy` routing, and no TUN. A custom **mihomo** `template.json` can set
+native DNS and inbound options; it cannot override generated proxies, groups,
+rules, mode or TUN. `api_url` must point to its `external-controller`. Do not
+reuse a sing-box template, state directory, or running listener ports.
+
+The NixOS flake output `nixosModules.mihomo` provides `services.sbMihomo.enable`,
+`services.sbMihomo.sources = [{ name = "main"; urlFile = "/run/agenix/url"; }]`,
+a root-owned `sb-mihomo.service`, update timer, and an `sb-mihomo` CLI wrapper.
+It uses `/var/lib/sb-mihomo` independently from the sing-box module. Run
+`sudo sb-mihomo update` once to seed the cache before the service can prepare;
+the update timer handles later refreshes. Set source URLs only via secret files;
+root owns the cache and service. This module has no
+privilege delegation/refresh trigger or TUN support. See
+[backend capabilities](docs/backend-capabilities.md) for conversion limits.
 
 ## Daily commands
 
@@ -253,16 +286,25 @@ legacy files are left intact; remove them manually after verifying migration.
 
 ## Reusable packages and boundaries
 
-- `subscription`: source identity, policy, multi-store catalog, and converter
-  adapter. `Converter.Parse(ctx, reader, source)` works with any subscription
-  body; `Fetch` adds HTTP and URL-file access. Neither applies application policy.
-- `singbox`: raw-JSON-preserving outbounds, pure `Compose`/`Legacy` config
-  construction, and a small Clash API client. Unknown protocol fields and exact
-  JSON numbers survive composition. No dependency on sing-box Go internals.
-- `internal/app`: update/prepare/edit use cases, state, external validation and
-  activation. `cmd/sb` owns arguments and terminal presentation.
+- `subscription`: source identity, policy, multi-store catalog, native URI
+  parser and optional legacy converter. `Fetch` adds HTTP and URL-file access;
+  neither parser applies application policy.
+- `proxy`: canonical cached nodes (raw JSON preserving unknown fields and exact
+  numbers) and source groups. Fields are currently sing-box-shaped, not a
+  promise that client configuration dialects are interchangeable.
+- `singbox` and `mihomo`: separate pure native config composers; mihomo
+  explicitly translates supported nodes and rejects untranslatable options.
+- `clash`: shared loopback selection API transport; it does **not** share config
+  or routing semantics between clients.
+- `internal/app`: backend-neutral update/prepare/edit, cache, validation and
+  activation use cases. It owns the `Backend` contract, not client implementations.
+- `internal/backend`: adapters implement that contract with a selected parser,
+  template, renderer, validation command and live controller.
+- `cmd/sb`: the composition root chooses one adapter from settings and owns
+  arguments and terminal presentation.
 
-There is no DI framework, generic repository layer, or alternate-backend hierarchy.
+There is no DI framework or generic repository layer. Backend-specific decisions
+are made once in the CLI composition root, not scattered through use cases.
 Public packages are intended for reuse but their APIs are pre-1.0. The module path
 is `github.com/sleroq/sb`; until published, consume the local module using Go's
 `replace` directive or a workspace.

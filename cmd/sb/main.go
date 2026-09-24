@@ -9,20 +9,19 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"os/signal"
 	"slices"
 	"strconv"
 	"syscall"
 
 	"github.com/sleroq/sb/internal/app"
-	"github.com/sleroq/sb/singbox"
+	"github.com/sleroq/sb/internal/backend"
 	"github.com/sleroq/sb/subscription"
 )
 
 const usage = `Usage: sb [--config PATH] COMMAND
 
-  init                         Create standalone XDG configuration
+  init [--backend mihomo]      Create standalone XDG configuration
   update [ID...]               Fetch subscriptions, validate, install, restart
   bypass on|off               Toggle direct-only routing
   tunnel off|on               Toggle template TUN inbound
@@ -69,6 +68,7 @@ func run(ctx context.Context, args []string) error {
 		return err
 	}
 	args = global.Args()
+
 	if len(args) == 0 || args[0] == "help" {
 		fmt.Print(usage)
 		return nil
@@ -81,21 +81,43 @@ func run(ctx context.Context, args []string) error {
 		*path = p
 	}
 	if args[0] == "init" {
-		if len(args) != 1 {
-			return fmt.Errorf("init takes no arguments")
-		}
-		return app.Init(*path)
+		return initCommand(*path, args[1:])
 	}
 	settings, err := app.LoadSettings(*path)
 	if err != nil {
 		return err
 	}
-	return execute(ctx, settings, args)
+	client, err := backend.New(backend.Config{
+		Name: settings.Backend, SingBox: settings.SingBox, Mihomo: settings.Mihomo,
+		Converter: settings.Converter, LegacyOutboundsFile: settings.LegacyOutboundsFile,
+		StaticOutboundsFile: settings.StaticOutboundsFile, ExtraOutboundsFile: settings.ExtraOutboundsFile,
+		RoutingMark: settings.RoutingMark,
+	})
+	if err != nil {
+		return err
+	}
+	return execute(ctx, settings, client, args)
 }
 
-func execute(ctx context.Context, settings app.Settings, args []string) error {
-	manager := app.Manager{Settings: settings}
-	api := singbox.Clash{URL: settings.APIURL}
+func initCommand(path string, args []string) error {
+	flags := flag.NewFlagSet("init", flag.ContinueOnError)
+	name := flags.String("backend", "sing-box", "proxy client backend")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return fmt.Errorf("init accepts only --backend")
+	}
+	client, err := backend.New(backend.Config{Name: *name})
+	if err != nil {
+		return err
+	}
+	return app.Init(path, client.Name(), client.Template())
+}
+
+func execute(ctx context.Context, settings app.Settings, client backend.Client, args []string) error {
+	manager := app.Manager{Settings: settings, Backend: client}
+	api := client.Control(settings.APIURL)
 	command, rest := args[0], args[1:]
 	switch command {
 	case "update", "subscription", "prepare", "apply", "bypass", "tunnel":
@@ -143,7 +165,7 @@ func setMode(ctx context.Context, manager app.Manager, command string, rest []st
 	return manager.SetMode(ctx, command, rest[0] == "on")
 }
 
-func clientCommand(ctx context.Context, manager app.Manager, api singbox.Clash, command string, rest []string) error {
+func clientCommand(ctx context.Context, manager app.Manager, api backend.Controller, command string, rest []string) error {
 	switch command {
 	case "pin", "unpin":
 		return pinCommand(ctx, manager, api, command, rest)
@@ -157,16 +179,13 @@ func clientCommand(ctx context.Context, manager app.Manager, api singbox.Clash, 
 		if len(rest) != 0 {
 			return fmt.Errorf("check takes no arguments")
 		}
-		child := exec.CommandContext(ctx, manager.Settings.SingBox, "check", "-c", manager.Settings.ConfigPath())
-		child.Stdout = os.Stdout
-		child.Stderr = os.Stderr
-		return child.Run()
+		return manager.Check(ctx)
 	default:
 		return fmt.Errorf("unknown client command %q", command)
 	}
 }
 
-func pinCommand(ctx context.Context, manager app.Manager, api singbox.Clash, command string, rest []string) error {
+func pinCommand(ctx context.Context, manager app.Manager, api backend.Controller, command string, rest []string) error {
 	if command == "pin" && len(rest) != 1 {
 		return fmt.Errorf("pin requires exactly one tag")
 	}
@@ -196,7 +215,7 @@ func pinCommand(ctx context.Context, manager app.Manager, api singbox.Clash, com
 	return nil
 }
 
-func useCommand(ctx context.Context, manager app.Manager, api singbox.Clash, rest []string) error {
+func useCommand(ctx context.Context, manager app.Manager, api backend.Controller, rest []string) error {
 	bypass, err := installedBypass(manager)
 	if err != nil {
 		return err
@@ -242,7 +261,7 @@ func installedBypass(manager app.Manager) (bool, error) {
 	return mode.Bypass, nil
 }
 
-func test(ctx context.Context, api singbox.Clash, testURL string, args []string) error {
+func test(ctx context.Context, api backend.Controller, testURL string, args []string) error {
 	if len(args) > 1 {
 		return fmt.Errorf("test accepts at most one group")
 	}
@@ -288,7 +307,7 @@ func config(manager app.Manager, args []string) error {
 	return nil
 }
 
-func inspect(ctx context.Context, manager app.Manager, api singbox.Clash, command string) error {
+func inspect(ctx context.Context, manager app.Manager, api backend.Controller, command string) error {
 	manifest, err := manager.Manifest()
 	if err != nil && !os.IsNotExist(err) {
 		return err
@@ -327,7 +346,7 @@ func printPin(manifest app.Manifest) {
 	}
 }
 
-func printSelection(manifest app.Manifest, selected singbox.Selector) {
+func printSelection(manifest app.Manifest, selected backend.Selection) {
 	sources := map[string]string{}
 	for _, node := range manifest.Nodes {
 		sources[node.Tag] = node.Source

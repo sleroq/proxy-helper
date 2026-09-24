@@ -7,16 +7,12 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+
+	"github.com/sleroq/sb/proxy"
 )
 
 // Outbound preserves unknown protocol fields and exact JSON numbers.
-type Outbound map[string]json.RawMessage
-
-func (o Outbound) String(key string) string {
-	var s string
-	_ = json.Unmarshal(o[key], &s)
-	return s
-}
+type Outbound = proxy.Node
 
 // Generated fields use only JSON primitives, so encoding cannot fail.
 func field[T string | uint | []string](value T) json.RawMessage {
@@ -24,11 +20,7 @@ func field[T string | uint | []string](value T) json.RawMessage {
 	return data
 }
 
-type Group struct {
-	Name      string
-	Nodes     []Outbound
-	Automatic []string
-}
+type Group = proxy.Group
 
 type Options struct {
 	URL         string

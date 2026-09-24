@@ -759,6 +759,146 @@ func TestRestartCanPrepareWithoutLockConflict(t *testing.T) {
 	}
 }
 
+func TestNativeSingBoxShadowsocks(t *testing.T) {
+	f := newFixture(t)
+	f.config["converter"] = ""
+	if core := os.Getenv("SB_REAL_CORE"); core != "" {
+		f.config["sing_box"] = core
+	}
+	f.write("config.json", f.config)
+	f.setBody("/one", "ss://"+base64.StdEncoding.EncodeToString([]byte("aes-128-gcm:pass"))+"@one.example:443#a")
+	f.setBody("/two", "trojan://password@two.example:443#b")
+	f.run("", true, "update")
+	var config struct {
+		Outbounds []struct {
+			Type string `json:"type"`
+		} `json:"outbounds"`
+	}
+	if err := json.Unmarshal([]byte(f.read("state/config.json")), &config); err != nil {
+		t.Fatal(err)
+	}
+	if len(config.Outbounds) == 0 || config.Outbounds[0].Type != "shadowsocks" {
+		t.Fatalf("native SS rendered as %v", config.Outbounds)
+	}
+	f.config["exclude_protocols"] = "ss"
+	f.setBody("/one", "ss://"+base64.StdEncoding.EncodeToString([]byte("aes-128-gcm:pass"))+"@one.example:443#a\n"+
+		"trojan://password@one.example:443#other")
+	f.write("config.json", f.config)
+	f.run("", true, "update")
+	if err := json.Unmarshal([]byte(f.read("state/config.json")), &config); err != nil {
+		t.Fatal(err)
+	}
+	for _, outbound := range config.Outbounds {
+		if outbound.Type == "shadowsocks" {
+			t.Fatal("excluded SS outbound remains installed")
+		}
+	}
+}
+
+func TestMihomoInit(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if output, err := exec.Command(binary, "--config", path, "init", "--backend", "mihomo").CombinedOutput(); err != nil {
+		t.Fatalf("mihomo init: %v: %s", err, output)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var settings struct {
+		Backend string `json:"backend"`
+	}
+	if err := json.Unmarshal(data, &settings); err != nil {
+		t.Fatal(err)
+	}
+	if settings.Backend != "mihomo" {
+		t.Fatalf("wrong backend: %s", settings.Backend)
+	}
+}
+
+func newMihomoFixture(t *testing.T) *fixture {
+	t.Helper()
+	f := newFixture(t)
+	f.config["backend"] = "mihomo"
+	f.config["mihomo"] = helper
+	if core := os.Getenv("SB_REAL_MIHOMO"); core != "" {
+		f.config["mihomo"] = core
+	}
+	f.config["converter"] = ""
+	f.config["restart_command"] = []string{helper, "restart-ok", filepath.Join(f.dir, "restarts")}
+	f.write("config.json", f.config)
+	f.write("template.json", map[string]any{"mixed-port": 2080, "external-controller": "127.0.0.1:9090"})
+	f.setBody("/one", "ss://"+base64.StdEncoding.EncodeToString([]byte("aes-128-gcm:pass"))+"@one.example:443#a")
+	f.setBody("/two", "trojan://password@two.example:443#b")
+	return f
+}
+
+func TestMihomoConfig(t *testing.T) {
+	f := newMihomoFixture(t)
+	f.run("", true, "update")
+
+	var config struct {
+		Proxies []struct {
+			Name string `json:"name"`
+			Type string `json:"type"`
+		} `json:"proxies"`
+		Groups []struct {
+			Name    string   `json:"name"`
+			Proxies []string `json:"proxies"`
+		} `json:"proxy-groups"`
+		Rules []string `json:"rules"`
+	}
+	if err := json.Unmarshal([]byte(f.read("state/config.json")), &config); err != nil {
+		t.Fatal(err)
+	}
+	if len(config.Proxies) != 2 || config.Proxies[0].Name != "a" || config.Proxies[0].Type != "ss" ||
+		len(config.Groups) == 0 || config.Groups[len(config.Groups)-1].Name != "proxy" ||
+		len(config.Rules) == 0 || config.Rules[0] != "MATCH,proxy" {
+		t.Fatalf("invalid mihomo config: %+v", config)
+	}
+}
+
+func TestMihomoWorkflow(t *testing.T) {
+	f := newMihomoFixture(t)
+	f.run("", true, "update")
+
+	if output := f.run("", true, "list"); !strings.Contains(output, "a [one]") {
+		t.Fatal(output)
+	}
+	f.run("", true, "use", "a")
+	if output := f.run("", true, "status"); !strings.Contains(output, "selected: a") {
+		t.Fatal(output)
+	}
+	f.run("", true, "pin", "a")
+	f.run("", true, "check")
+	f.run("", true, "apply")
+	if count := strings.Count(f.read("restarts"), "restart\n"); count != 2 {
+		t.Fatalf("restart count = %d", count)
+	}
+}
+
+func TestMihomoRejectsUnsupportedConfig(t *testing.T) {
+	f := newMihomoFixture(t)
+	f.run("", true, "update")
+	installed := f.read("state/config.json")
+
+	f.write("template.json", map[string]any{"tun": map[string]any{"enable": true}})
+	if output := f.run("", false, "update"); !strings.Contains(output, "tun") {
+		t.Fatal(output)
+	}
+	if f.read("state/config.json") != installed {
+		t.Fatal("invalid candidate replaced installed config")
+	}
+
+	f.write("template.json", map[string]any{"profile": map[string]any{"store-selected": true}})
+	if output := f.run("", false, "apply"); !strings.Contains(output, "store-selected") {
+		t.Fatal(output)
+	}
+	if output := f.run("", false, "tunnel", "on"); !strings.Contains(output, "not supported") {
+		t.Fatal(output)
+	}
+}
+
 func TestStandaloneInit(t *testing.T) {
 	dir := t.TempDir()
 	cmd := exec.Command(binary, "init")

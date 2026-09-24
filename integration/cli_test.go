@@ -62,64 +62,20 @@ func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	f := &fixture{t: t, dir: t.TempDir(), bodies: map[string]string{}, requests: map[string]int{}, selected: "auto"}
 
-	f.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		f.mu.Lock()
-		f.requests[r.URL.Path]++
-		blocked := f.blockedPath == r.URL.Path && (r.URL.Path != "/proxies/proxy" || r.Method == http.MethodPut)
-		entered := f.entered
-		release := f.release
-		selected := f.selected
-		body, exists := f.bodies[r.URL.Path]
-		f.mu.Unlock()
-		if blocked {
-			select {
-			case entered <- struct{}{}:
-			case <-r.Context().Done():
-				return
-			}
-			select {
-			case <-r.Context().Done():
-			case <-release:
-			}
-			return
-		}
-		switch {
-		case r.URL.Path == "/proxies/proxy":
-			if r.Method == http.MethodPut {
-				var body struct {
-					Name string `json:"name"`
-				}
-				if json.NewDecoder(r.Body).Decode(&body) != nil {
-					w.WriteHeader(400)
-					return
-				}
-				f.mu.Lock()
-				f.selected = body.Name
-				f.mu.Unlock()
-				w.WriteHeader(204)
-				return
-			}
-			all := []string{"auto", "a", "b"}
-			if _, err := os.Stat(filepath.Join(f.dir, "static.json")); err == nil {
-				all = append(all, "auto-custom")
-			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"now": selected, "all": all})
-		case strings.HasPrefix(r.URL.Path, "/group/"):
-			_ = json.NewEncoder(w).Encode(map[string]int{"a": 80, "b": 20})
-		default:
-			if !exists {
-				http.NotFound(w, r)
-				return
-			}
-			_, _ = fmt.Fprint(w, body)
-		}
-	}))
+	f.server = httptest.NewServer(http.HandlerFunc(f.serveHTTP))
 	t.Cleanup(f.server.Close)
 
 	f.config = map[string]any{
-		"template_file": "template.json", "state_dir": "state", "api_url": f.server.URL,
-		"sing_box": helper, "converter": helper, "overrides_file": "overrides.json",
-		"stores": []any{map[string]any{"name": "declared", "path": "declared.json", "writable": false}, map[string]any{"name": "local", "path": "local.json", "writable": true}},
+		"template_file":  "template.json",
+		"state_dir":      "state",
+		"api_url":        f.server.URL,
+		"sing_box":       helper,
+		"converter":      helper,
+		"overrides_file": "overrides.json",
+		"stores": []any{
+			map[string]any{"name": "declared", "path": "declared.json", "writable": false},
+			map[string]any{"name": "local", "path": "local.json", "writable": true},
+		},
 	}
 	f.write("template.json", map[string]any{"route": map[string]any{"final": "proxy"}})
 	f.write("declared.json", map[string]any{"subscriptions": []any{f.source("one", "/one"), f.source("two", "/two")}})
@@ -129,6 +85,67 @@ func newFixture(t *testing.T) *fixture {
 	f.setBody("/two", `[{"type":"shadowsocks","tag":"b","server":"two.example",
 		"password":"secret-two","server_port":443}]`)
 	return f
+}
+
+func (f *fixture) serveHTTP(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	f.requests[r.URL.Path]++
+	blocked := f.blockedPath == r.URL.Path && (r.URL.Path != "/proxies/proxy" || r.Method == http.MethodPut)
+	entered := f.entered
+	release := f.release
+	selected := f.selected
+	body, exists := f.bodies[r.URL.Path]
+	f.mu.Unlock()
+	if blocked {
+		waitBlockedRequest(r.Context(), entered, release)
+		return
+	}
+	switch {
+	case r.URL.Path == "/proxies/proxy":
+		f.serveProxy(w, r, selected)
+	case strings.HasPrefix(r.URL.Path, "/group/"):
+		_ = json.NewEncoder(w).Encode(map[string]int{"a": 80, "b": 20})
+	default:
+		if !exists {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = fmt.Fprint(w, body)
+	}
+}
+
+func waitBlockedRequest(ctx context.Context, entered chan struct{}, release chan struct{}) {
+	select {
+	case entered <- struct{}{}:
+	case <-ctx.Done():
+		return
+	}
+	select {
+	case <-ctx.Done():
+	case <-release:
+	}
+}
+
+func (f *fixture) serveProxy(w http.ResponseWriter, r *http.Request, selected string) {
+	if r.Method == http.MethodPut {
+		var body struct {
+			Name string `json:"name"`
+		}
+		if json.NewDecoder(r.Body).Decode(&body) != nil {
+			w.WriteHeader(400)
+			return
+		}
+		f.mu.Lock()
+		f.selected = body.Name
+		f.mu.Unlock()
+		w.WriteHeader(204)
+		return
+	}
+	all := []string{"auto", "a", "b"}
+	if _, err := os.Stat(filepath.Join(f.dir, "static.json")); err == nil {
+		all = append(all, "auto-custom")
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"now": selected, "all": all})
 }
 
 func (f *fixture) source(id, path string) map[string]any {
@@ -226,69 +243,80 @@ func TestUsePicker(t *testing.T) {
 	}
 }
 
+type blockedPickerCase struct {
+	name, path, input string
+	signal            bool
+}
+
 func TestPickerBlockedRequests(t *testing.T) {
-	for _, tc := range []struct {
-		name, path, input string
-		signal            bool
-	}{
+	for _, tc := range []blockedPickerCase{
 		{"latency ctrl+c", "/group/auto/delay", "\x03", false},
 		{"selection SIGINT", "/proxies/proxy", "\r", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			f := newFixture(t)
-			f.run("", true, "update")
-
-			f.mu.Lock()
-			f.blockedPath, f.entered, f.release = tc.path, make(chan struct{}, 1), make(chan struct{})
-			defer close(f.release)
-			f.mu.Unlock()
-
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			defer cancel()
-			cmd := exec.CommandContext(ctx, binary, "--config", filepath.Join(f.dir, "config.json"), "use")
-			terminal, err := pty.Start(cmd)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer func() { _ = terminal.Close() }()
-			output := make(chan string, 1)
-			go func() { data, _ := io.ReadAll(terminal); output <- string(data) }()
-
-			if tc.signal {
-				// Let the picker render before selecting its default leaf.
-				time.Sleep(150 * time.Millisecond)
-				if _, err := terminal.Write([]byte(tc.input)); err != nil {
-					t.Fatal(err)
-				}
-			}
-			select {
-			case <-f.entered:
-			case <-ctx.Done():
-				t.Fatal("request never blocked")
-			}
-			if tc.signal {
-				if err := cmd.Process.Signal(os.Interrupt); err != nil {
-					t.Fatal(err)
-				}
-			} else if _, err := terminal.Write([]byte(tc.input)); err != nil {
-				t.Fatal(err)
-			}
-
-			err = cmd.Wait()
-			screen := <-output
-			if err != nil || ctx.Err() != nil {
-				t.Fatalf("interrupted picker: %v (context: %v): %q", err, ctx.Err(), screen)
-			}
-			if !strings.Contains(screen, "\x1b[?1049l") {
-				t.Fatalf("alternate screen not restored: %q", screen)
-			}
-			f.mu.Lock()
-			selected := f.selected
-			f.mu.Unlock()
-			if selected != "auto" {
-				t.Fatalf("selection changed to %q", selected)
-			}
+			testBlockedPicker(t, tc)
 		})
+	}
+}
+
+func testBlockedPicker(t *testing.T, tc blockedPickerCase) {
+	f := newFixture(t)
+	f.run("", true, "update")
+
+	f.mu.Lock()
+	f.blockedPath, f.entered, f.release = tc.path, make(chan struct{}, 1), make(chan struct{})
+	defer close(f.release)
+	f.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, binary, "--config", filepath.Join(f.dir, "config.json"), "use")
+	terminal, err := pty.Start(cmd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = terminal.Close() }()
+	output := make(chan string, 1)
+	go func() { data, _ := io.ReadAll(terminal); output <- string(data) }()
+
+	interruptBlockedPicker(t, tc, f.entered, ctx, cmd, terminal)
+
+	err = cmd.Wait()
+	screen := <-output
+	if err != nil || ctx.Err() != nil {
+		t.Fatalf("interrupted picker: %v (context: %v): %q", err, ctx.Err(), screen)
+	}
+	if !strings.Contains(screen, "\x1b[?1049l") {
+		t.Fatalf("alternate screen not restored: %q", screen)
+	}
+	f.mu.Lock()
+	selected := f.selected
+	f.mu.Unlock()
+	if selected != "auto" {
+		t.Fatalf("selection changed to %q", selected)
+	}
+}
+
+func interruptBlockedPicker(t *testing.T, tc blockedPickerCase, entered <-chan struct{}, ctx context.Context, cmd *exec.Cmd, terminal *os.File) {
+	t.Helper()
+	if tc.signal {
+		// Let the picker render before selecting its default leaf.
+		time.Sleep(150 * time.Millisecond)
+		if _, err := terminal.Write([]byte(tc.input)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	select {
+	case <-entered:
+	case <-ctx.Done():
+		t.Fatal("request never blocked")
+	}
+	if tc.signal {
+		if err := cmd.Process.Signal(os.Interrupt); err != nil {
+			t.Fatal(err)
+		}
+	} else if _, err := terminal.Write([]byte(tc.input)); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -348,6 +376,10 @@ func TestPinPersistence(t *testing.T) {
 	if info, err := os.Stat(filepath.Join(f.dir, "state", "pin.json")); err != nil || info.Mode().Perm() != 0600 {
 		t.Fatalf("pin permissions: %v", err)
 	}
+	checkStalePin(t, f)
+}
+
+func checkStalePin(t *testing.T, f *fixture) {
 	f.run("", true, "prepare")
 	if !strings.Contains(f.read("state/config.json"), `"default": "b"`) {
 		t.Fatal("prepare lost pin")

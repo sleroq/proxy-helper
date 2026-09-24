@@ -188,18 +188,7 @@ func (m Manager) buildCandidate(ctx context.Context, sources []subscription.Sour
 		return nil, nil, Manifest{}, err
 	}
 
-	manifest.PinnedTag = pin
-	for _, group := range groups {
-		for _, node := range group.Nodes {
-			manifest.PinActive = manifest.PinActive || pin != "" && node.String("tag") == pin
-		}
-	}
-	for _, node := range extra {
-		tag := node.String("tag")
-		manifest.PinActive = manifest.PinActive || pin != "" && tag == pin
-		// The API already exposes tags; keep extra outbound endpoints private.
-		manifest.ExtraNodes = append(manifest.ExtraNodes, NodeInfo{Tag: tag, Source: "local"})
-	}
+	manifest.addPinAndExtra(pin, groups, extra)
 
 	options := singbox.Options{
 		URL:         s.TestURL,
@@ -216,6 +205,21 @@ func (m Manager) buildCandidate(ctx context.Context, sources []subscription.Sour
 		return nil, nil, Manifest{}, err
 	}
 	return config, retained, manifest, nil
+}
+
+func (manifest *Manifest) addPinAndExtra(pin string, groups []singbox.Group, extra []singbox.Outbound) {
+	manifest.PinnedTag = pin
+	for _, group := range groups {
+		for _, node := range group.Nodes {
+			manifest.PinActive = manifest.PinActive || pin != "" && node.String("tag") == pin
+		}
+	}
+	for _, node := range extra {
+		tag := node.String("tag")
+		manifest.PinActive = manifest.PinActive || pin != "" && tag == pin
+		// The API already exposes tags; keep extra outbound endpoints private.
+		manifest.ExtraNodes = append(manifest.ExtraNodes, NodeInfo{Tag: tag, Source: "local"})
+	}
 }
 
 func (s Settings) loadExtraOutbounds() ([]singbox.Outbound, error) {

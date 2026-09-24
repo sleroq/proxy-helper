@@ -50,6 +50,10 @@ func (m Manager) Pin(ctx context.Context, tag string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return s.installPin(tag, config, retained, manifest)
+}
+
+func (s Settings) installPin(tag string, config json.RawMessage, retained Cache, manifest Manifest) (string, error) {
 	if tag != "" && !manifest.PinActive {
 		return "", fmt.Errorf("tag %q is not an available leaf outbound", tag)
 	}

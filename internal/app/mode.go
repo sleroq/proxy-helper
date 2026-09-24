@@ -67,7 +67,9 @@ func (m Manager) setModeLocked(ctx context.Context, command string, enabled bool
 	if err != nil {
 		return err
 	}
-	config, retained, manifest, err := m.buildCandidateWithMode(ctx, catalog.Sources(), cache, pin, mode, command == "tunnel")
+	sources := catalog.Sources()
+	tunnelCommand := command == "tunnel"
+	config, retained, manifest, err := m.buildCandidateWithMode(ctx, sources, cache, pin, mode, tunnelCommand)
 	if err == nil {
 		err = s.Install(config, retained, manifest)
 	}

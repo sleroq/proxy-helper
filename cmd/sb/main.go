@@ -142,71 +142,9 @@ func mutate(ctx context.Context, manager app.Manager, command string, rest []str
 func clientCommand(ctx context.Context, manager app.Manager, api singbox.Clash, command string, rest []string) error {
 	switch command {
 	case "pin", "unpin":
-		if command == "pin" && len(rest) != 1 {
-			return fmt.Errorf("pin requires exactly one tag")
-		}
-		if command == "unpin" && len(rest) != 0 {
-			return fmt.Errorf("unpin takes no arguments")
-		}
-
-		tag := ""
-		if command == "pin" {
-			tag = rest[0]
-		}
-		choice, err := manager.Pin(ctx, tag)
-		if err != nil {
-			return err
-		}
-
-		mode, err := manager.Settings.LoadMode()
-		if err != nil {
-			return err
-		}
-		if mode.Bypass {
-			fmt.Println("pin saved; bypass remains direct-only; run sb bypass off to restore proxy selection")
-			return nil
-		}
-		if err := api.Use(ctx, choice); err != nil {
-			return fmt.Errorf("pin/config saved, but live selection could not be changed: %w", err)
-		}
-		fmt.Println("selected", choice)
-		return nil
+		return pinCommand(ctx, manager, api, command, rest)
 	case "use":
-		manifest, err := manager.Manifest()
-		if err != nil && !os.IsNotExist(err) {
-			return err
-		}
-		if manifest.Mode == nil {
-			mode, modeErr := manager.Settings.LoadMode()
-			if modeErr != nil {
-				return fmt.Errorf("installed mode unavailable: %w", modeErr)
-			}
-			if os.IsNotExist(err) {
-				return fmt.Errorf("installed mode unavailable: no manifest")
-			}
-			manifest.Mode = &mode
-		}
-		if manifest.Mode.Bypass {
-			return fmt.Errorf("direct-only bypass enabled; run sb bypass off before sb use")
-		}
-		if len(rest) > 1 {
-			return fmt.Errorf("use accepts at most one tag")
-		}
-		if len(rest) == 0 {
-			tag, err := pick(ctx, manager, api)
-			if err != nil || tag == "" {
-				return err
-			}
-			rest = []string{tag}
-		}
-		if err := api.Use(ctx, rest[0]); err != nil {
-			if ctx.Err() != nil {
-				return nil //nolint:nilerr // SIGINT cancels the live change without an alarming API error.
-			}
-			return err
-		}
-		fmt.Println("selected", rest[0])
-		return nil
+		return useCommand(ctx, manager, api, rest)
 	case "test":
 		return test(ctx, api, manager.Settings.TestURL, rest)
 	case "config":
@@ -222,6 +160,74 @@ func clientCommand(ctx context.Context, manager app.Manager, api singbox.Clash, 
 	default:
 		return fmt.Errorf("unknown client command %q", command)
 	}
+}
+
+func pinCommand(ctx context.Context, manager app.Manager, api singbox.Clash, command string, rest []string) error {
+	if command == "pin" && len(rest) != 1 {
+		return fmt.Errorf("pin requires exactly one tag")
+	}
+	if command == "unpin" && len(rest) != 0 {
+		return fmt.Errorf("unpin takes no arguments")
+	}
+	tag := ""
+	if command == "pin" {
+		tag = rest[0]
+	}
+	choice, err := manager.Pin(ctx, tag)
+	if err != nil {
+		return err
+	}
+	mode, err := manager.Settings.LoadMode()
+	if err != nil {
+		return err
+	}
+	if mode.Bypass {
+		fmt.Println("pin saved; bypass remains direct-only; run sb bypass off to restore proxy selection")
+		return nil
+	}
+	if err := api.Use(ctx, choice); err != nil {
+		return fmt.Errorf("pin/config saved, but live selection could not be changed: %w", err)
+	}
+	fmt.Println("selected", choice)
+	return nil
+}
+
+func useCommand(ctx context.Context, manager app.Manager, api singbox.Clash, rest []string) error {
+	manifest, err := manager.Manifest()
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if manifest.Mode == nil {
+		mode, modeErr := manager.Settings.LoadMode()
+		if modeErr != nil {
+			return fmt.Errorf("installed mode unavailable: %w", modeErr)
+		}
+		if os.IsNotExist(err) {
+			return fmt.Errorf("installed mode unavailable: no manifest")
+		}
+		manifest.Mode = &mode
+	}
+	if manifest.Mode.Bypass {
+		return fmt.Errorf("direct-only bypass enabled; run sb bypass off before sb use")
+	}
+	if len(rest) > 1 {
+		return fmt.Errorf("use accepts at most one tag")
+	}
+	if len(rest) == 0 {
+		tag, err := pick(ctx, manager, api)
+		if err != nil || tag == "" {
+			return err
+		}
+		rest = []string{tag}
+	}
+	if err := api.Use(ctx, rest[0]); err != nil {
+		if ctx.Err() == nil {
+			return err
+		}
+		return nil // SIGINT cancels the live change without an alarming API error.
+	}
+	fmt.Println("selected", rest[0])
+	return nil
 }
 
 func test(ctx context.Context, api singbox.Clash, testURL string, args []string) error {

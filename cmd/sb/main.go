@@ -115,10 +115,7 @@ func execute(ctx context.Context, settings app.Settings, args []string) error {
 func mutate(ctx context.Context, manager app.Manager, command string, rest []string) error {
 	switch command {
 	case "bypass", "tunnel":
-		if len(rest) != 1 || (rest[0] != "on" && rest[0] != "off") {
-			return fmt.Errorf("usage: sb %s on|off", command)
-		}
-		return manager.SetMode(ctx, command, rest[0] == "on")
+		return setMode(ctx, manager, command, rest)
 	case "update":
 		return manager.Update(ctx, rest)
 	case "subscription":
@@ -137,6 +134,13 @@ func mutate(ctx context.Context, manager app.Manager, command string, rest []str
 	default:
 		return fmt.Errorf("unknown mutation %q", command)
 	}
+}
+
+func setMode(ctx context.Context, manager app.Manager, command string, rest []string) error {
+	if len(rest) != 1 || (rest[0] != "on" && rest[0] != "off") {
+		return fmt.Errorf("usage: sb %s on|off", command)
+	}
+	return manager.SetMode(ctx, command, rest[0] == "on")
 }
 
 func clientCommand(ctx context.Context, manager app.Manager, api singbox.Clash, command string, rest []string) error {
@@ -193,21 +197,11 @@ func pinCommand(ctx context.Context, manager app.Manager, api singbox.Clash, com
 }
 
 func useCommand(ctx context.Context, manager app.Manager, api singbox.Clash, rest []string) error {
-	manifest, err := manager.Manifest()
-	if err != nil && !os.IsNotExist(err) {
+	bypass, err := installedBypass(manager)
+	if err != nil {
 		return err
 	}
-	if manifest.Mode == nil {
-		mode, modeErr := manager.Settings.LoadMode()
-		if modeErr != nil {
-			return fmt.Errorf("installed mode unavailable: %w", modeErr)
-		}
-		if os.IsNotExist(err) {
-			return fmt.Errorf("installed mode unavailable: no manifest")
-		}
-		manifest.Mode = &mode
-	}
-	if manifest.Mode.Bypass {
+	if bypass {
 		return fmt.Errorf("direct-only bypass enabled; run sb bypass off before sb use")
 	}
 	if len(rest) > 1 {
@@ -228,6 +222,24 @@ func useCommand(ctx context.Context, manager app.Manager, api singbox.Clash, res
 	}
 	fmt.Println("selected", rest[0])
 	return nil
+}
+
+func installedBypass(manager app.Manager) (bool, error) {
+	manifest, err := manager.Manifest()
+	if err != nil && !os.IsNotExist(err) {
+		return false, err
+	}
+	if manifest.Mode != nil {
+		return manifest.Mode.Bypass, nil
+	}
+	mode, modeErr := manager.Settings.LoadMode()
+	if modeErr != nil {
+		return false, fmt.Errorf("installed mode unavailable: %w", modeErr)
+	}
+	if os.IsNotExist(err) {
+		return false, fmt.Errorf("installed mode unavailable: no manifest")
+	}
+	return mode.Bypass, nil
 }
 
 func test(ctx context.Context, api singbox.Clash, testURL string, args []string) error {
@@ -362,6 +374,11 @@ func status(settings app.Settings, manifest app.Manifest, missing bool) error {
 		fmt.Println("last update:", manifest.UpdatedAt)
 		fmt.Println("nodes:", len(manifest.Nodes))
 	}
+	printSourceStatus(manifest, health)
+	return nil
+}
+
+func printSourceStatus(manifest app.Manifest, health map[string]app.SourceHealth) {
 	installed := installedSources(manifest)
 	ids := make([]string, 0, len(installed)+len(health))
 	for id := range installed {
@@ -384,7 +401,6 @@ func status(settings app.Settings, manifest app.Manifest, missing bool) error {
 		}
 		fmt.Println()
 	}
-	return nil
 }
 
 func installedSources(manifest app.Manifest) map[string]app.SourceInfo {

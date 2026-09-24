@@ -800,6 +800,10 @@ func TestModes(t *testing.T) {
 	if output := f.run("", false, "use", "a"); !strings.Contains(output, "sb bypass off") {
 		t.Fatal(output)
 	}
+	checkCachedBypassMode(t, f)
+}
+
+func checkCachedBypassMode(t *testing.T, f *fixture) {
 	f.run("", true, "prepare")
 	f.run("", true, "update")
 	if output := f.run("", false, "tunnel", "off"); !strings.Contains(output, "no TUN") {
@@ -815,13 +819,40 @@ func TestModes(t *testing.T) {
 	if config := f.read("state/config.json"); !strings.Contains(config, `"default": "b"`) {
 		t.Fatal("saved pin not restored")
 	}
-	f.write("template.json", json.RawMessage(`{"inbounds":[{"type":"tun","tag":"tun","address":["198.18.0.1/30"],"auto_route":true},{"type":"mixed","tag":"mixed","listen":"127.0.0.1","listen_port":2080}],"route":{"final":"proxy","rules":[{"domain_suffix":["example.net"],"action":"route","outbound":"proxy"},{"action":"sniff"},{"protocol":"dns","action":"hijack-dns"}]},"dns":{"servers":[{"type":"https","tag":"remote","server":"1.1.1.1","detour":"proxy"}],"rules":[{"domain_suffix":["example.net"],"action":"route","server":"remote"}],"final":"remote"}}`))
+	checkTunnelBypassMode(t, f)
+}
+
+func checkTunnelBypassMode(t *testing.T, f *fixture) {
+	f.write("template.json", json.RawMessage(`{
+  "inbounds": [
+    {"type":"tun", "tag":"tun", "address":["198.18.0.1/30"], "auto_route":true},
+    {"type":"mixed", "tag":"mixed", "listen":"127.0.0.1", "listen_port":2080}
+  ],
+  "route": {
+    "final":"proxy",
+    "rules": [
+      {"domain_suffix":["example.net"], "action":"route", "outbound":"proxy"},
+      {"action":"sniff"},
+      {"protocol":"dns", "action":"hijack-dns"}
+    ]
+  },
+  "dns": {
+    "servers":[{"type":"https", "tag":"remote", "server":"1.1.1.1", "detour":"proxy"}],
+    "rules":[{"domain_suffix":["example.net"], "action":"route", "server":"remote"}],
+    "final":"remote"
+  }
+}`))
 	f.run("", true, "tunnel", "off")
 	f.run("", true, "bypass", "on")
-	config = f.read("state/config.json")
+	config := f.read("state/config.json")
 	if strings.Contains(config, "secret-one") || strings.Contains(config, "secret-two") || strings.Contains(config, `"type": "urltest"`) {
 		t.Fatal("direct-only bypass retained unused proxy outbounds")
 	}
+	checkDirectOnlyConfig(t, config)
+	checkRestoredTunnelBypass(t, f)
+}
+
+func checkDirectOnlyConfig(t *testing.T, config string) {
 	var installed struct {
 		Inbounds []struct{ Type string }
 		Route    struct {
@@ -843,8 +874,11 @@ func TestModes(t *testing.T) {
 	if len(installed.Inbounds) != 1 || installed.Inbounds[0].Type != "mixed" || installed.DNS.Final != "sb-local" || len(installed.DNS.Rules) != 0 || len(installed.DNS.Servers) != 1 || installed.DNS.Servers[0].Type != "local" {
 		t.Fatal(config)
 	}
+}
+
+func checkRestoredTunnelBypass(t *testing.T, f *fixture) {
 	f.run("", true, "tunnel", "on")
-	config = f.read("state/config.json")
+	config := f.read("state/config.json")
 	if !strings.Contains(config, `"type": "tun"`) {
 		t.Fatal("TUN not restored")
 	}
@@ -933,6 +967,10 @@ func TestPrivateModeAndConfigUnavailable(t *testing.T) {
 		t.Fatal(output)
 	}
 	f.run("", true, "use", "a")
+	checkUnavailableManifestMode(t, f)
+}
+
+func checkUnavailableManifestMode(t *testing.T, f *fixture) {
 	manifestPath := filepath.Join(f.dir, "state", "subscription.json")
 	data, err := os.ReadFile(manifestPath)
 	if err != nil {

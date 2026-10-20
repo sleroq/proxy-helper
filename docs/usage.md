@@ -11,15 +11,23 @@ Install Go 1.26+ and sing-box. From the repository:
 ```sh
 go install ./cmd/ph
 ph init
-ph subscription add <<'JSON'
-{"id":"main","url_file":"/absolute/private/provider-url","prefix":"main-"}
-JSON
+ph subscription add --id main --prefix main- 'https://provider.example/subscription'
 ph update
 ph run
 ```
 
-Provision the URL file privately, with mode 0600. Do not put credentials in
-shell history. `subscription add` reads one JSON object from stdin.
+`subscription add` accepts one HTTP(S) URL. Without `--id`, the ID is the URL's
+hostname with dots and colons replaced by hyphens. Use a unique `--id` when
+adding multiple subscriptions from the same host. Put options before the URL.
+
+Direct URL arguments can expose credentials in shell history and process listings.
+For a private-file setup, provision a URL file with mode 0600, then use:
+
+```sh
+ph subscription add --id main --prefix main- --url-file /absolute/private/provider-url
+```
+
+Managed URL files must be root-owned.
 
 - Config: `$XDG_CONFIG_HOME/ph/config.json`, or `~/.config/ph/config.json`.
 - Proxy: `127.0.0.1:2080`. Control API: `127.0.0.1:9090`. No TUN or root required.

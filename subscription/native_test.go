@@ -3,6 +3,7 @@ package subscription
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -47,6 +48,39 @@ func testNativeEncoded(t *testing.T, n Native, lines string) {
 	}
 	if _, err = n.Parse(strings.NewReader("bad"), Source{}); err == nil {
 		t.Fatal("expected no nodes")
+	}
+}
+
+func TestNativeURIFingerprint(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		uri         string
+		fingerprint string
+	}{
+		{"Reality", "vless://uuid@example.com:443?security=reality&pbk=key&fp=chrome", "chrome"},
+		{"TLS", "vless://uuid@example.com:443?security=tls&fp=firefox", "firefox"},
+		{"Trojan", "trojan://password@example.com:443?fp=safari", "safari"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, err := (Native{}).Parse(strings.NewReader(tt.uri), Source{})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			var tls struct {
+				Enabled bool `json:"enabled"`
+				UTLS    struct {
+					Enabled     bool   `json:"enabled"`
+					Fingerprint string `json:"fingerprint"`
+				} `json:"utls"`
+			}
+			if err := json.Unmarshal(nodes[0]["tls"], &tls); err != nil {
+				t.Fatal(err)
+			}
+			if !tls.Enabled || !tls.UTLS.Enabled || tls.UTLS.Fingerprint != tt.fingerprint {
+				t.Fatalf("TLS fingerprint not preserved: %+v", tls)
+			}
+		})
 	}
 }
 

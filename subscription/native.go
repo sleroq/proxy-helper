@@ -381,6 +381,9 @@ func nativeSupportedSecurity(security string) bool {
 
 func nativeURITLS(q url.Values, security string) map[string]any {
 	tls := nativeTLS(q.Get("sni"), q.Get("alpn"))
+	if fingerprint := q.Get("fp"); fingerprint != "" {
+		tls["utls"] = map[string]any{"enabled": true, "fingerprint": fingerprint}
+	}
 	if security == "reality" {
 		if pk := q.Get("pbk"); pk != "" {
 			tls["reality"] = map[string]any{"enabled": true, "public_key": pk, "short_id": q.Get("sid")}

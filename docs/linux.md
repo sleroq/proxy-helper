@@ -38,9 +38,7 @@ credentials in a private file rather than shell history:
 ```sh
 sudo install -m 0600 /dev/null /etc/ph/provider-url
 sudoedit /etc/ph/provider-url
-sudo ph subscription add <<'JSON'
-{"id":"main","url_file":"/etc/ph/provider-url","prefix":"main-"}
-JSON
+sudo ph subscription add --id main --prefix main- --url-file /etc/ph/provider-url
 sudo ph update
 ph status
 ph list

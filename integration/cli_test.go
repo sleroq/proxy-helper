@@ -499,11 +499,9 @@ func (f *fixture) workflowSymlink(t *testing.T) {
 	if err := os.Symlink("editable.json", filepath.Join(f.dir, "local.json")); err != nil {
 		t.Fatal(err)
 	}
-	source, _ := json.Marshal(f.source("three", "/three"))
-	f.run(string(source), true, "subscription", "add")
+	f.run("", true, "subscription", "add", "--id", "three", f.server.URL+"/three")
 	before := f.read("editable.json")
-	duplicate, _ := json.Marshal(f.source("three", "/replacement"))
-	if output := f.run(string(duplicate), false, "subscription", "add"); !strings.Contains(output, "duplicate subscription ID") {
+	if output := f.run("", false, "subscription", "add", "--id", "three", f.server.URL+"/replacement"); !strings.Contains(output, "duplicate subscription ID") {
 		t.Fatal(output)
 	}
 	if f.read("editable.json") != before {
@@ -804,6 +802,25 @@ func TestNativeSingBoxShadowsocks(t *testing.T) {
 	}
 }
 
+func TestNativeSingBoxReality(t *testing.T) {
+	f := newFixture(t)
+	f.config["converter"] = ""
+	if core := os.Getenv("PH_REAL_CORE"); core != "" {
+		f.config["sing_box"] = core
+	}
+	f.write("config.json", f.config)
+	publicKey := base64.RawURLEncoding.EncodeToString([]byte("01234567890123456789012345678901"))
+	uri := "vless://00000000-0000-4000-8000-000000000001@one.example:443?" +
+		"security=reality&flow=xtls-rprx-vision&sni=example.com&fp=chrome&pbk=" + publicKey + "#reality"
+	f.setBody("/one", uri)
+	f.setBody("/two", "trojan://password@two.example:443#other")
+	f.run("", true, "update")
+	f.run("", true, "check")
+	if !strings.Contains(f.read("state/config.json"), `"fingerprint": "chrome"`) {
+		t.Fatal("Reality client fingerprint missing from installed config")
+	}
+}
+
 func TestMihomoInit(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	if output, err := exec.Command(binary, "--config", path, "init", "--backend", "mihomo").CombinedOutput(); err != nil {
@@ -988,11 +1005,7 @@ func TestStandaloneUserWorkflow(t *testing.T) {
 			t.Fatalf("ph %v: %v\n%s", args, err, output)
 		}
 	}
-	entry, err := json.Marshal(map[string]string{"id": "main", "url_file": urlPath})
-	if err != nil {
-		t.Fatal(err)
-	}
-	run(string(entry), "subscription", "add")
+	run("", "subscription", "add", "--id", "main", "--url-file", urlPath)
 	run("", "update")
 	run("", "use", "a")
 	f.mu.Lock()

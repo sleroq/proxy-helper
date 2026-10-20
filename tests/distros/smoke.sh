@@ -108,7 +108,7 @@ for backend in s['backends'].values():
 PY
 umask 077
 printf '%s\n' http://127.0.0.1:18080/subscription > /etc/ph/fixture-url
-printf '%s\n' '{"id":"fixture","url_file":"/etc/ph/fixture-url"}' | ph subscription add
+ph subscription add --id fixture --url-file /etc/ph/fixture-url
 private_file /etc/ph/fixture-url
 attempt=0
 while [ "$attempt" -lt 30 ]; do

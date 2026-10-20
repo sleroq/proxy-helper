@@ -3,15 +3,15 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
-	"io"
+	"net/url"
 	"os"
 	"os/signal"
 	"slices"
 	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/sleroq/ph/internal/app"
@@ -40,7 +40,8 @@ const usage = `Usage: ph [--config PATH] COMMAND
   unpin                        Restore automatic/default selection
   config [--raw] | check       Inspect or validate installed config
   subscription list
-  subscription add [--store NAME]       Read a source JSON object from stdin
+  subscription add [--id ID] [--prefix PREFIX] [--store NAME] URL
+  subscription add --id ID --url-file PATH [--prefix PREFIX] [--store NAME]
   subscription delete ID
   subscription update [ID...]
   subscription enable|disable|reset ID
@@ -551,23 +552,39 @@ func listSubscriptions(m app.Manager, args []string) error {
 func addSubscription(c *subscription.Catalog, args []string) error {
 	flags := flag.NewFlagSet("subscription add", flag.ContinueOnError)
 	store := flags.String("store", "", "writable store")
+	var source subscription.Source
+	flags.StringVar(&source.ID, "id", "", "subscription ID (default: hostname, dots/colons become hyphens)")
+	flags.StringVar(&source.Prefix, "prefix", "", "node tag prefix")
+	flags.StringVar(&source.URLFile, "url-file", "", "private URL file (requires --id; no URL argument)")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
-	if flags.NArg() != 0 {
-		return fmt.Errorf("add reads source JSON from stdin, not arguments")
+	if source.URLFile != "" {
+		if flags.NArg() != 0 || source.ID == "" {
+			return fmt.Errorf("add --url-file requires --id and no URL argument")
+		}
+		return c.Add(source, *store)
 	}
-	var source subscription.Source
-	decoder := json.NewDecoder(os.Stdin)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&source); err != nil {
-		return fmt.Errorf("invalid source JSON on stdin")
+	if flags.NArg() != 1 {
+		return fmt.Errorf("usage: ph subscription add [--id ID] [--prefix PREFIX] [--store NAME] URL")
 	}
-	var trailing any
-	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		return fmt.Errorf("expected exactly one source JSON object")
+	source.URL = flags.Arg(0)
+	parsed, err := parseSubscriptionURL(source.URL)
+	if err != nil {
+		return err
+	}
+	if source.ID == "" {
+		source.ID = strings.NewReplacer(".", "-", ":", "-").Replace(parsed.Hostname())
 	}
 	return c.Add(source, *store)
+}
+
+func parseSubscriptionURL(raw string) (*url.URL, error) {
+	parsed, err := url.Parse(raw)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" {
+		return nil, fmt.Errorf("subscription URL must be an absolute HTTP or HTTPS URL")
+	}
+	return parsed, nil
 }
 
 func automatic(c *subscription.Catalog, args []string) error {

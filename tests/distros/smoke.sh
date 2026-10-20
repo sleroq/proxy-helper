@@ -69,7 +69,7 @@ PY
 install_package 0.0.1
 [ "$(ph version)" = 0.0.1 ]
 expect_failure ph refresh fixture
-[ "$(command -v ph)" = /usr/bin/ph ]
+[ "$(readlink -f "$(command -v ph)")" = /usr/bin/ph ]
 test ! -e /var/lib/ph/config.json
 case "$distro" in
     void)

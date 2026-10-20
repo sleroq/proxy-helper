@@ -19,10 +19,14 @@ import (
 	"github.com/sleroq/sb/subscription"
 )
 
+var version = "dev"
+
 const usage = `Usage: sb [--config PATH] COMMAND
 
+  version                      Print CLI version
   init [--backend mihomo]      Create standalone XDG configuration
   update [ID...]               Fetch subscriptions, validate, install, restart
+  refresh                      Request service update (managed packages only)
   bypass on|off               Toggle direct-only routing
   tunnel off|on               Toggle template TUN inbound
   run                          Exec selected core with installed config
@@ -73,6 +77,13 @@ func run(ctx context.Context, args []string) error {
 
 	if len(args) == 0 || args[0] == "help" {
 		fmt.Print(usage)
+		return nil
+	}
+	if args[0] == "version" {
+		if len(args) != 1 {
+			return fmt.Errorf("version takes no arguments")
+		}
+		fmt.Println(version)
 		return nil
 	}
 	if *path == "" {

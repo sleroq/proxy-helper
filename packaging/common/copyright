@@ -1,0 +1,13 @@
+Bundled core attribution and source provenance
+
+sing-box v1.14.3 — SagerNet and sing-box contributors
+https://github.com/SagerNet/sing-box/tree/v1.14.3
+License: GNU GPL version 3 or later; see LICENSE-sing-box and COPYING.
+
+mihomo v1.19.32 — MetaCubeX and mihomo contributors
+https://github.com/MetaCubeX/mihomo/tree/v1.19.32
+License: GNU GPL version 3; see LICENSE-mihomo and COPYING.
+
+Corresponding vendored source archives for these pinned versions accompany the
+GitHub release distributing these packages. COPYING contains the full GPL text.
+No license claim is made here for sb itself.

@@ -1,0 +1,17 @@
+#!/bin/sh
+set -e
+case "$1" in
+    post)
+        /usr/lib/sb/initialize
+        /usr/lib/sb/log-initialize
+        if [ -d /var/service ] && pgrep -x runsvdir >/dev/null; then
+            for service in sb-proxy sb-proxy-update; do
+                if [ ! -e "/var/service/$service" ]; then
+                    ln -s "/etc/sv/$service" "/var/service/$service"
+                elif [ "$service" = sb-proxy ]; then
+                    sv restart sb-proxy
+                fi
+            done
+        fi
+        ;;
+esac

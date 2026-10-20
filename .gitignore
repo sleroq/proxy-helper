@@ -1,3 +1,6 @@
 /sb
 /result
+/build/
+/dist/
 *.test
+__pycache__/

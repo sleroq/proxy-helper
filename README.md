@@ -5,9 +5,21 @@ macOS. It is not a proxy or service supervisor. The default subscription parser 
 set `converter` to `sing-box-sub` to opt into the legacy adapter during migration.
 Configuration validation uses your installed proxy core (`sing-box` or `mihomo`).
 
-## Standalone setup
+## Install on Linux
 
-Install Go 1.26+ and sing-box, then:
+**Native system-managed packages are the default on Debian, Arch and Void.**
+They include sing-box and mihomo, root-owned configuration/state, systemd or
+runit services, daily subscription updates, and upgrade-safe configuration.
+See [managed Linux installation](docs/linux.md) for installation, upgrades,
+permissions, service control, and automatic Docker tests. No Nix or Go is needed
+on the installed host. NixOS and nix-darwin remain supported by the modules below.
+
+## Standalone setup (manual testing / custom deployments)
+
+Install Go 1.26+ and sing-box, then use the unpackaged CLI below. On an already
+managed host, pass `--config "$HOME/.config/sb/config.json"` to every standalone
+command so it cannot target the system profile. Stop the managed core or choose
+a different standalone API port before running both profiles.
 
 ```sh
 go install ./cmd/sb
@@ -19,8 +31,11 @@ sb update
 sing-box run -c "$HOME/.config/sb/state/config.json"
 ```
 
-Configuration defaults to `$XDG_CONFIG_HOME/sb/config.json`, falling back to
-`~/.config/sb/config.json` on **both** macOS and Linux. `--config PATH` must precede
+The native Linux package's `sb` wrapper defaults to `/etc/sb/config.json`.
+For `sb init` and an unpackaged CLI, configuration defaults to
+`$XDG_CONFIG_HOME/sb/config.json`, falling back to `~/.config/sb/config.json` on
+**both** macOS and Linux. Use explicit `--config` for a standalone profile on a
+managed host. `--config PATH` must precede
 the command. `init` creates a native sing-box template with a loopback mixed proxy
 on port 2080 and Clash API on port 9090; it does **not** enable TUN or require root.
 Adjust the template and add a user service manager separately if desired. The
@@ -369,18 +384,23 @@ protocol types, server names and source IDs: metadata is not anonymous.
 `config` redaction is best-effort and remains permission-protected, not a safe
 public export API. HTTPS subscription URLs are recommended; HTTP is allowed for
 private/local providers. The API client currently supports unauthenticated local
-Clash endpoints only. Keep the controller loopback-bound.
+Clash endpoints only. Keep the controller loopback-bound. Loopback is a network
+boundary, not local-user authorization: the cores expose runtime configuration
+endpoints beyond `sb`'s live-selection commands. These defaults trust every local
+user/process and are not appropriate for untrusted multi-user hosts.
 
 ## Verification
 
 ```sh
-go test -race ./...
+go test -race -count=1 ./...
 golangci-lint run --enable=modernize
 nix build
 ```
 
-Only integration/end-to-end tests are used: compiled CLI processes, real local
-HTTP, filesystem permissions/symlinks, and subprocess doubles for the converter
-and validator. Optional real-core coverage uses `SB_REAL_CORE` and
+GitHub CI runs Go tests on Linux/macOS and native package lifecycle tests in
+Docker for Debian/Arch/Void using actual systemd/runit and both real proxy cores.
+See [managed Linux verification](docs/linux.md#build-and-automatic-verification).
+The Go suite exercises compiled CLI processes, real local HTTP, filesystem
+permissions/symlinks, and subprocess doubles for the converter and validator. Optional real-core coverage uses `SB_REAL_CORE` and
 `SB_REAL_CONVERTER` absolute paths, with optional `SB_REAL_TEMPLATE` to validate
 an existing non-secret native template. It does not contact real providers or start TUN.

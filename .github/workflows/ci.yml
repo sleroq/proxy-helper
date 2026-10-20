@@ -1,0 +1,124 @@
+name: Test and package
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v[0-9]*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go test -race -count=1 ./...
+      - name: Go analysis
+        if: runner.os == 'Linux'
+        run: |
+          go install golang.org/x/tools/gopls@v0.23.0
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1
+          go install golang.org/x/tools/cmd/deadcode@v0.50.0
+          mapfile -d '' files < <(git ls-files -z '*.go' ':!:integration/testdata/*')
+          gopls check "${files[@]}"
+          golangci-lint run
+          deadcode -test ./...
+
+  distro:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: debian
+            arch: amd64
+            runner: ubuntu-24.04
+          - distro: debian
+            arch: arm64
+            runner: ubuntu-24.04-arm
+          - distro: arch
+            arch: amd64
+            runner: ubuntu-24.04
+          - distro: void
+            arch: amd64
+            runner: ubuntu-24.04
+          - distro: void
+            arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Prepare version
+        id: version
+        shell: bash
+        run: |
+          version=0.0.0
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then version=${GITHUB_REF_NAME#v}; fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Build CLI and verified upstream cores
+        run: scripts/build-linux.sh '${{ steps.version.outputs.version }}' '${{ matrix.arch }}' build/input
+      - name: Test native install, services, subscription updates, upgrades and removal
+        run: tests/distros/run.sh '${{ matrix.distro }}' build/input '${{ matrix.arch }}'
+      - name: Build distributable native package
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        run: tests/distros/build.sh '${{ matrix.distro }}' '${{ steps.version.outputs.version }}' '${{ matrix.arch }}' build/input dist
+      - uses: actions/upload-artifact@v4
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        with:
+          name: sb-${{ matrix.distro }}-${{ matrix.arch }}
+          retention-days: 1
+          path: |
+            dist/*.deb
+            dist/*.pkg.tar.zst
+            dist/*.xbps
+          if-no-files-found: error
+
+  sources:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: scripts/core-sources.sh dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundled-core-sources
+          retention-days: 1
+          path: dist/*-source.tar.gz
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [go, distro, sources]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish tested packages and corresponding core sources
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          cd dist
+          sha256sum ./*.deb ./*.pkg.tar.zst ./*.xbps ./*-source.tar.gz > SHA256SUMS
+          gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes ./*

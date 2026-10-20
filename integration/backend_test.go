@@ -31,6 +31,13 @@ func TestManagedBackendSelection(t *testing.T) {
 	}
 	f.run("", false, "backend", "select")
 	f.run("", true, "backend", "select", "sing-box")
+	info, err := os.Stat(filepath.Join(f.dir, "state", "active-backend.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0644 {
+		t.Fatalf("backend identity must be publicly readable but owner-writable: %v", info.Mode())
+	}
 	if output := f.run("", true, "backend", "list"); !strings.Contains(output, "* sing-box") {
 		t.Fatal(output)
 	}

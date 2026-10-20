@@ -1,0 +1,3 @@
+#!/bin/sh
+set -e
+if [ "$1" = remove ]; then /usr/lib/sb/package-remove; fi

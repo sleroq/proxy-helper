@@ -1,0 +1,17 @@
+[Unit]
+Description=sb managed proxy
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/var/lib/sb/config.json
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/sb run
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

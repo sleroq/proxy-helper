@@ -1,0 +1,6 @@
+{
+  "mixed-port": 1080,
+  "bind-address": "127.0.0.1",
+  "allow-lan": false,
+  "external-controller": "127.0.0.1:9090"
+}

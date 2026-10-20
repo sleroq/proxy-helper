@@ -66,7 +66,8 @@ func (tx *backendSwitch) install(config json.RawMessage, manifest Manifest, name
 	if err := files.Write(tx.manifestPath, manifest, 0644); err != nil {
 		return err
 	}
-	return files.Write(tx.activePath, activeRecord{Backend: name}, 0600)
+	// Backend identity is public so local users can still reach the live API.
+	return files.Write(tx.activePath, activeRecord{Backend: name}, 0644)
 }
 
 func (tx *backendSwitch) restore() error {
@@ -81,7 +82,7 @@ func (tx *backendSwitch) restore() error {
 		if err := os.Remove(tx.activePath); err != nil && !os.IsNotExist(err) {
 			failures = append(failures, err)
 		}
-	} else if err := files.WriteBytes(tx.activePath, tx.previousActive, 0600); err != nil {
+	} else if err := files.WriteBytes(tx.activePath, tx.previousActive, 0644); err != nil {
 		failures = append(failures, err)
 	}
 	return errors.Join(failures...)

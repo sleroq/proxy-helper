@@ -1,0 +1,17 @@
+sb native Linux package
+
+Run root-managed commands with appropriate root privileges. Add subscriptions
+with sb subscription add, then seed with sb update. No proxy configuration is
+created until a successful update. sb refresh requests the native update service;
+no sudo policy is installed. sb init remains a manual XDG installation path.
+Local mixed proxy: 127.0.0.1:1080; control API: 127.0.0.1:9090. No TUN by default.
+Configuration and templates in /etc/sb are preserved on upgrades. State lives in
+/var/lib/sb and is never removed by hooks. Debian purge removes native conffiles;
+back up /etc/sb before purge. Other package managers retain edited config files
+according to their native backup/config_files behavior.
+
+Bundled sing-box and mihomo are GPLv3 projects. Their supplied license texts are
+installed alongside this file as LICENSE-sing-box and LICENSE-mihomo. Sources:
+https://github.com/SagerNet/sing-box
+https://github.com/MetaCubeX/mihomo
+This notice makes no license claim for sb itself.

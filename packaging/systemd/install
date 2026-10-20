@@ -1,0 +1,11 @@
+#!/bin/sh
+set -e
+/usr/lib/sb/initialize
+if [ -d /run/systemd/system ]; then
+    systemctl daemon-reload
+    systemctl enable sb-proxy.service sb-proxy-update.timer
+    systemctl start sb-proxy-update.timer
+    if systemctl is-active --quiet sb-proxy.service; then
+        systemctl restart sb-proxy.service
+    fi
+fi

@@ -1,0 +1,13 @@
+#!/bin/sh
+set -e
+for service in sb-proxy sb-proxy-update; do
+    path=/var/log/$service
+    if [ -e "$path" ] || [ -L "$path" ]; then
+        if [ -L "$path" ] || [ ! -d "$path" ] || [ "$(stat -c %u "$path")" != 0 ] || [ "$(stat -c %a "$path")" != 700 ]; then
+            echo "sb: refusing unsafe log directory: $path" >&2
+            exit 1
+        fi
+    else
+        install -d -o root -g root -m 0700 "$path"
+    fi
+done

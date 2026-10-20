@@ -1,4 +1,4 @@
-module github.com/sleroq/sb
+module github.com/sleroq/ph
 
 go 1.26
 

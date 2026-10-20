@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sleroq/sb/proxy"
+	"github.com/sleroq/ph/proxy"
 )
 
 // Native fetches and parses supported URI subscriptions without an external converter.

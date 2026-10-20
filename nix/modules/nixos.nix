@@ -2,11 +2,11 @@
   config,
   lib,
   pkgs,
-  sbModule,
+  phModule,
   ...
 }:
 let
-  cfg = config.services.sb;
+  cfg = config.services.ph;
   sub = cfg.subscription;
   caps = [
     "CAP_NET_ADMIN"
@@ -18,13 +18,13 @@ in
 {
   imports = [ ./common.nix ];
   config = lib.mkIf cfg.enable {
-    systemd.services.sb-proxy = {
-      description = "sb-proxy";
+    systemd.services.ph-proxy = {
+      description = "ph-proxy";
       wantedBy = [ "multi-user.target" ];
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
       serviceConfig = {
-        ExecStart = sbModule.runner;
+        ExecStart = phModule.runner;
         Restart = "on-failure";
         User = "root";
         Group = "root";
@@ -33,31 +33,31 @@ in
         CapabilityBoundingSet = caps;
       }
       // lib.optionalAttrs (cfg.routingMark != 0) {
-        ExecStartPre = pkgs.writeShellScript "sb-routing-rule-start" ''
+        ExecStartPre = pkgs.writeShellScript "ph-routing-rule-start" ''
           ${pkgs.iproute2}/bin/ip rule del ${rule} 2>/dev/null || true
           ${pkgs.iproute2}/bin/ip rule add ${rule}
         '';
-        ExecStopPost = pkgs.writeShellScript "sb-routing-rule-stop" ''
+        ExecStopPost = pkgs.writeShellScript "ph-routing-rule-stop" ''
           ${pkgs.iproute2}/bin/ip rule del ${rule} 2>/dev/null || true
         '';
       };
     };
-    systemd.services.sb-proxy-update = lib.mkIf sub.enable {
-      description = "Update sb-proxy subscription";
+    systemd.services.ph-proxy-update = lib.mkIf sub.enable {
+      description = "Update ph-proxy subscription";
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
       serviceConfig = {
         Type = "oneshot";
         User = "root";
-        ExecStart = sbModule.update;
+        ExecStart = phModule.update;
       };
     };
-    systemd.timers.sb-proxy-update = lib.mkIf sub.enable {
+    systemd.timers.ph-proxy-update = lib.mkIf sub.enable {
       wantedBy = [ "timers.target" ];
       timerConfig = {
         OnBootSec = "5m";
         OnUnitActiveSec = "${toString sub.updateInterval}s";
-        Unit = "sb-proxy-update.service";
+        Unit = "ph-proxy-update.service";
       };
     };
     security.polkit.enable = lib.mkIf (cfg.refreshUser != null && sub.enable) (lib.mkDefault true);
@@ -65,7 +65,7 @@ in
       polkit.addRule(function(action, subject) {
         if (subject.user == ${builtins.toJSON cfg.refreshUser} &&
             action.id == "org.freedesktop.systemd1.manage-units" &&
-            action.lookup("unit") == "sb-proxy-update.service" &&
+            action.lookup("unit") == "ph-proxy-update.service" &&
             action.lookup("verb") == "start") return polkit.Result.YES;
       });
     '';

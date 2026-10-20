@@ -7,7 +7,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/sleroq/sb/proxy"
+	"github.com/sleroq/ph/proxy"
 )
 
 type Options struct {
@@ -60,10 +60,10 @@ func prepareTemplate(root map[string]json.RawMessage) error {
 			return fmt.Errorf("profile must be a JSON object")
 		}
 	}
-	// Mihomo defaults to persisting selector changes; sb use is intentionally
-	// live-only, while sb pin owns the durable selection.
+	// Mihomo defaults to persisting selector changes; ph use is intentionally
+	// live-only, while ph pin owns the durable selection.
 	if raw, ok := profile["store-selected"]; ok && string(raw) != "false" {
-		return fmt.Errorf("profile.store-selected conflicts with sb pin/use semantics")
+		return fmt.Errorf("profile.store-selected conflicts with ph pin/use semantics")
 	}
 	profile["store-selected"] = json.RawMessage(`false`)
 	encodedProfile, _ := json.Marshal(profile)

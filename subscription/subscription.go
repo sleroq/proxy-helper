@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"slices"
 
-	"github.com/sleroq/sb/internal/files"
+	"github.com/sleroq/ph/internal/files"
 )
 
 // Policy filters automatic selection only; excluded nodes remain selectable.

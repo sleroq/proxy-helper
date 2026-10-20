@@ -6,8 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/sleroq/sb/internal/files"
-	"github.com/sleroq/sb/subscription"
+	"github.com/sleroq/ph/internal/files"
+	"github.com/sleroq/ph/subscription"
 )
 
 type Mode struct {

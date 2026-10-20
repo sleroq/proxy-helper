@@ -14,7 +14,7 @@ root=$(CDPATH='' cd -- "$(dirname "$0")/../.." && pwd)
 input=$(cd "$4" && pwd)
 mkdir -p "$5"
 output=$(cd "$5" && pwd)
-image=sb-distro-builder:$distro-$arch
+image=ph-distro-builder:$distro-$arch
 docker build --platform "linux/$arch" --build-arg "BASE=$base" --build-arg "DISTRO=$distro" -t "$image" "$root/tests/distros"
 docker run --rm --platform "linux/$arch" -v "$root:/project:ro" -v "$input:/input:ro" -v "$output:/artifacts" "$image" bash /project/scripts/build-packages.sh "$distro" "$version" "$arch" /input /artifacts
 if [ "$distro" = void ]; then

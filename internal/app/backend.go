@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/sleroq/sb/proxy"
-	"github.com/sleroq/sb/subscription"
+	"github.com/sleroq/ph/proxy"
+	"github.com/sleroq/ph/subscription"
 )
 
 type Options struct {

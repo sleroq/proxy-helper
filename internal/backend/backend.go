@@ -1,4 +1,4 @@
-// Package backend adapts client-specific configuration and control to sb's
+// Package backend adapts client-specific configuration and control to ph's
 // subscription use cases. Nodes and source policy remain client-independent.
 package backend
 
@@ -7,14 +7,14 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/sleroq/sb/clash"
-	"github.com/sleroq/sb/internal/app"
+	"github.com/sleroq/ph/clash"
+	"github.com/sleroq/ph/internal/app"
 )
 
 // Selection is the live selector snapshot shown by the CLI.
 type Selection = clash.Selector
 
-// Controller exposes the live operations sb needs, not a particular wire API.
+// Controller exposes the live operations ph needs, not a particular wire API.
 type Controller interface {
 	Selector(context.Context) (Selection, error)
 	Use(context.Context, string) error

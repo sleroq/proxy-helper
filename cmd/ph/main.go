@@ -1,4 +1,4 @@
-// sb is a short-lived controller, not a proxy or service supervisor.
+// ph is a short-lived controller, not a proxy or service supervisor.
 package main
 
 import (
@@ -14,14 +14,14 @@ import (
 	"strconv"
 	"syscall"
 
-	"github.com/sleroq/sb/internal/app"
-	"github.com/sleroq/sb/internal/backend"
-	"github.com/sleroq/sb/subscription"
+	"github.com/sleroq/ph/internal/app"
+	"github.com/sleroq/ph/internal/backend"
+	"github.com/sleroq/ph/subscription"
 )
 
 var version = "dev"
 
-const usage = `Usage: sb [--config PATH] COMMAND
+const usage = `Usage: ph [--config PATH] COMMAND
 
   version                      Print CLI version
   init [--backend mihomo]      Create standalone XDG configuration
@@ -47,12 +47,12 @@ const usage = `Usage: sb [--config PATH] COMMAND
   subscription auto ID [--enabled BOOL] [--include-tag REGEX] [--exclude-tag REGEX]
                        [--include-server REGEX] [--exclude-server REGEX] [--clear]
 
-Store/policy edits are staged; run sb apply or sb update to activate them.
+Store/policy edits are staged; run ph apply or ph update to activate them.
 `
 
 func main() {
 	if err := runWithSignals(os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, "sb:", err)
+		fmt.Fprintln(os.Stderr, "ph:", err)
 		os.Exit(1)
 	}
 }
@@ -64,7 +64,7 @@ func runWithSignals(args []string) error {
 }
 
 func run(ctx context.Context, args []string) error {
-	global := flag.NewFlagSet("sb", flag.ContinueOnError)
+	global := flag.NewFlagSet("ph", flag.ContinueOnError)
 	path := global.String("config", "", "configuration path")
 	global.Usage = func() { fmt.Fprint(os.Stderr, usage) }
 	if err := global.Parse(args); err != nil {
@@ -154,7 +154,7 @@ func execute(ctx context.Context, settings app.Settings, client backend.Client, 
 		}
 		return inspect(ctx, manager, api, command)
 	default:
-		return fmt.Errorf("unknown command %q; run sb help", command)
+		return fmt.Errorf("unknown command %q; run ph help", command)
 	}
 }
 
@@ -184,7 +184,7 @@ func mutate(ctx context.Context, manager app.Manager, command string, rest []str
 
 func setMode(ctx context.Context, manager app.Manager, command string, rest []string) error {
 	if len(rest) != 1 || (rest[0] != "on" && rest[0] != "off") {
-		return fmt.Errorf("usage: sb %s on|off", command)
+		return fmt.Errorf("usage: ph %s on|off", command)
 	}
 	return manager.SetMode(ctx, command, rest[0] == "on")
 }
@@ -229,7 +229,7 @@ func pinCommand(ctx context.Context, manager app.Manager, api backend.Controller
 		return err
 	}
 	if mode.Bypass {
-		fmt.Println("pin saved; bypass remains direct-only; run sb bypass off to restore proxy selection")
+		fmt.Println("pin saved; bypass remains direct-only; run ph bypass off to restore proxy selection")
 		return nil
 	}
 	if err := api.Use(ctx, choice); err != nil {
@@ -245,7 +245,7 @@ func useCommand(ctx context.Context, manager app.Manager, api backend.Controller
 		return err
 	}
 	if bypass {
-		return fmt.Errorf("direct-only bypass enabled; run sb bypass off before sb use")
+		return fmt.Errorf("direct-only bypass enabled; run ph bypass off before ph use")
 	}
 	if len(rest) > 1 {
 		return fmt.Errorf("use accepts at most one tag")
@@ -321,7 +321,7 @@ func test(ctx context.Context, api backend.Controller, testURL string, args []st
 
 func config(manager app.Manager, args []string) error {
 	if len(args) > 1 || (len(args) == 1 && args[0] != "--raw") {
-		return fmt.Errorf("usage: sb config [--raw]")
+		return fmt.Errorf("usage: ph config [--raw]")
 	}
 	data, err := manager.Config(len(args) == 1)
 	if err != nil {
@@ -451,7 +451,7 @@ func installedSources(manifest app.Manifest) map[string]app.SourceInfo {
 	for _, source := range manifest.Sources {
 		installed[source.ID] = source
 	}
-	// A manifest from an older sb has nodes but no per-source summary.
+	// A manifest from an older ph has nodes but no per-source summary.
 	if len(manifest.Sources) == 0 {
 		for _, node := range manifest.Nodes {
 			source := installed[node.Source]
@@ -487,7 +487,7 @@ func (p *patterns) Set(value string) error { *p = append(*p, value); return nil 
 
 func subscriptions(ctx context.Context, m app.Manager, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("subscription subcommand required; run sb help")
+		return fmt.Errorf("subscription subcommand required; run ph help")
 	}
 	command, rest := args[0], args[1:]
 	if command == "update" {
@@ -498,7 +498,7 @@ func subscriptions(ctx context.Context, m app.Manager, args []string) error {
 	}
 	err := m.Edit(func(c *subscription.Catalog) error { return editSubscription(c, command, rest) })
 	if err == nil {
-		fmt.Println("saved; run sb apply (cached) or sb update (fetch) to activate")
+		fmt.Println("saved; run ph apply (cached) or ph update (fetch) to activate")
 	}
 	return err
 }
@@ -572,7 +572,7 @@ func addSubscription(c *subscription.Catalog, args []string) error {
 
 func automatic(c *subscription.Catalog, args []string) error {
 	if len(args) < 2 {
-		return fmt.Errorf("usage: sb subscription auto ID --enabled BOOL | --include-tag REGEX | " +
+		return fmt.Errorf("usage: ph subscription auto ID --enabled BOOL | --include-tag REGEX | " +
 			"--exclude-tag REGEX | --include-server REGEX | --exclude-server REGEX | --clear")
 	}
 	id := args[0]

@@ -2,14 +2,14 @@
   config,
   lib,
   pkgs,
-  sbFlake,
+  phFlake,
   ...
 }:
 let
-  cfg = config.services.sbMihomo;
+  cfg = config.services.phMihomo;
   json = pkgs.formats.json { };
-  state = "/var/lib/sb-mihomo";
-  template = json.generate "sb-mihomo-template.json" (
+  state = "/var/lib/ph-mihomo";
+  template = json.generate "ph-mihomo-template.json" (
     {
       mixed-port = 2080;
       bind-address = "127.0.0.1";
@@ -18,7 +18,7 @@ let
     }
     // cfg.settings
   );
-  sources = json.generate "sb-mihomo-sources.json" {
+  sources = json.generate "ph-mihomo-sources.json" {
     subscriptions = map (source: {
       id = source.name;
       url_file = source.urlFile;
@@ -30,8 +30,8 @@ let
       exclude_servers = source.excludeServers;
     }) cfg.sources;
   };
-  cli = pkgs.sb or sbFlake.packages.${pkgs.stdenv.hostPlatform.system}.sb;
-  settings = json.generate "sb-mihomo-config.json" {
+  cli = pkgs.ph or phFlake.packages.${pkgs.stdenv.hostPlatform.system}.ph;
+  settings = json.generate "ph-mihomo-config.json" {
     backend = "mihomo";
     mihomo = "${cfg.package}/bin/mihomo";
     template_file = toString template;
@@ -53,22 +53,22 @@ let
     restart_command = [
       "${pkgs.systemd}/bin/systemctl"
       "restart"
-      "sb-mihomo.service"
+      "ph-mihomo.service"
     ];
   };
-  sb = pkgs.writeShellScriptBin "sb-mihomo" ''
-    exec ${cli}/bin/sb --config ${settings} "$@"
+  ph = pkgs.writeShellScriptBin "ph-mihomo" ''
+    exec ${cli}/bin/ph --config ${settings} "$@"
   '';
-  runner = pkgs.writeShellScript "sb-mihomo-run" ''
+  runner = pkgs.writeShellScript "ph-mihomo-run" ''
     set -eu
     umask 077
-    ${sb}/bin/sb-mihomo prepare
+    ${ph}/bin/ph-mihomo prepare
     exec ${cfg.package}/bin/mihomo -f ${state}/config.json -d ${state}
   '';
 in
 {
-  options.services.sbMihomo = {
-    enable = lib.mkEnableOption "mihomo managed by sb (loopback mixed proxy, no TUN)";
+  options.services.phMihomo = {
+    enable = lib.mkEnableOption "mihomo managed by ph (loopback mixed proxy, no TUN)";
     package = lib.mkOption {
       type = lib.types.package;
       default = pkgs.mihomo;
@@ -121,8 +121,8 @@ in
   config = lib.mkIf cfg.enable {
     assertions = [
       {
-        assertion = !(lib.attrByPath [ "services" "sb" "enable" ] false config);
-        message = "services.sbMihomo and services.sb cannot share the default proxy/API ports.";
+        assertion = !(lib.attrByPath [ "services" "ph" "enable" ] false config);
+        message = "services.phMihomo and services.ph cannot share the default proxy/API ports.";
       }
       {
         assertion =
@@ -134,7 +134,7 @@ in
             || cfg.settings ? mode
             || cfg.settings ? tun
           );
-        message = "sb manages mihomo proxies, proxy-groups and rules; native providers, mode and TUN are unsupported.";
+        message = "ph manages mihomo proxies, proxy-groups and rules; native providers, mode and TUN are unsupported.";
       }
       {
         assertion =
@@ -154,10 +154,10 @@ in
     ];
     environment.systemPackages = [
       cfg.package
-      sb
+      ph
     ];
-    systemd.services.sb-mihomo = {
-      description = "mihomo managed by sb";
+    systemd.services.ph-mihomo = {
+      description = "mihomo managed by ph";
       wantedBy = [ "multi-user.target" ];
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
@@ -165,27 +165,27 @@ in
         ExecStart = runner;
         Restart = "on-failure";
         User = "root";
-        StateDirectory = "sb-mihomo";
+        StateDirectory = "ph-mihomo";
       };
     };
-    systemd.services.sb-mihomo-update = {
-      description = "Update sb mihomo subscriptions";
+    systemd.services.ph-mihomo-update = {
+      description = "Update ph mihomo subscriptions";
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
       serviceConfig = {
         Type = "oneshot";
         User = "root";
-        ExecStart = pkgs.writeShellScript "sb-mihomo-update" ''
-          exec ${sb}/bin/sb-mihomo update
+        ExecStart = pkgs.writeShellScript "ph-mihomo-update" ''
+          exec ${ph}/bin/ph-mihomo update
         '';
       };
     };
-    systemd.timers.sb-mihomo-update = {
+    systemd.timers.ph-mihomo-update = {
       wantedBy = [ "timers.target" ];
       timerConfig = {
         OnBootSec = "5m";
         OnUnitActiveSec = "${toString cfg.updateInterval}s";
-        Unit = "sb-mihomo-update.service";
+        Unit = "ph-mihomo-update.service";
       };
     };
   };

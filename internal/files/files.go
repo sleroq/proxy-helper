@@ -41,7 +41,7 @@ func WriteBytes(path string, data []byte, mode os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(filepath.Dir(path), ".sb-*")
+	f, err := os.CreateTemp(filepath.Dir(path), ".ph-*")
 	if err != nil {
 		return err
 	}

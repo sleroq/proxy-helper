@@ -16,6 +16,6 @@ for core in sing-box mihomo; do
     tar -xzf "$tmp/source.tar.gz" -C "$tmp"
     # Include dependency sources, rather than relying on a future module proxy.
     (cd "$tmp/$name"; go mod vendor)
-    printf 'Upstream: https://github.com/%s/tree/v%s\nBuild with the Go version in go.mod and -mod=vendor.\nSee upstream build/release scripts for build tags and flags.\n' "$repo" "$version" > "$tmp/$name/SB-SOURCE.txt"
+    printf 'Upstream: https://github.com/%s/tree/v%s\nBuild with the Go version in go.mod and -mod=vendor.\nSee upstream build/release scripts for build tags and flags.\n' "$repo" "$version" > "$tmp/$name/PH-SOURCE.txt"
     tar -czf "$output/$name-source.tar.gz" -C "$tmp" "$name"
 done

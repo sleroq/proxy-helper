@@ -79,7 +79,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         with:
-          name: sb-${{ matrix.distro }}-${{ matrix.arch }}
+          name: ph-${{ matrix.distro }}-${{ matrix.arch }}
           retention-days: 1
           path: |
             dist/*.deb

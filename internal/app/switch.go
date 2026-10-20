@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sleroq/sb/internal/files"
+	"github.com/sleroq/ph/internal/files"
 )
 
 type activeRecord struct {

@@ -14,5 +14,5 @@ root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 mkdir -p "$output"
 output=$(CDPATH='' cd -- "$output" && pwd)
 cd "$root"
-CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -ldflags "-s -w -X main.version=$version" -o "$output/sb" ./cmd/sb
+CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -ldflags "-s -w -X main.version=$version" -o "$output/ph" ./cmd/ph
 "$root/scripts/fetch-cores.sh" "$arch" "$output"

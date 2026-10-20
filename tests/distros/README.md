@@ -9,13 +9,13 @@ tests/distros/run.sh void /absolute/path/to/input arm64
 tests/distros/build.sh debian 1.2.3 arm64 /absolute/path/to/input ./output
 ```
 
-Input contains executable `sb`, actual `sing-box` 1.14.3 and `mihomo`
+Input contains executable `ph`, actual `sing-box` 1.14.3 and `mihomo`
 1.19.32, and `LICENSE-sing-box` / `LICENSE-mihomo` / `COPYING`. Prepare it with
 `scripts/build-linux.sh VERSION ARCH INPUT_DIR`. Architectures are `amd64`
 or `arm64` (host default for `run.sh`); Docker must support the selected
 platform. Arch's public base image supports amd64 only. Prefer native-architecture
 runners: local ARM/QEMU testing timed out bootstrapping Arch systemd 262, before
-any sb service ran. GitHub CI uses a native amd64 runner for that lifecycle.
+any ph service ran. GitHub CI uses a native amd64 runner for that lifecycle.
 
 The builder calls `scripts/build-packages.sh DISTRO VERSION ARCH INPUT_DIR
 OUTPUT_DIR` inside Debian trixie, Arch `archlinux:base`, or official

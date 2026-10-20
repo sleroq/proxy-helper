@@ -8,7 +8,7 @@ import (
 	"maps"
 	"slices"
 
-	"github.com/sleroq/sb/proxy"
+	"github.com/sleroq/ph/proxy"
 )
 
 // Outbound preserves unknown protocol fields and exact JSON numbers.

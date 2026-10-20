@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/sleroq/sb/clash"
-	"github.com/sleroq/sb/internal/app"
-	"github.com/sleroq/sb/mihomo"
-	"github.com/sleroq/sb/proxy"
-	"github.com/sleroq/sb/subscription"
+	"github.com/sleroq/ph/clash"
+	"github.com/sleroq/ph/internal/app"
+	"github.com/sleroq/ph/mihomo"
+	"github.com/sleroq/ph/proxy"
+	"github.com/sleroq/ph/subscription"
 )
 
 type mihomoClient struct{ binary string }

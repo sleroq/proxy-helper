@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/sleroq/sb/proxy"
+	"github.com/sleroq/ph/proxy"
 )
 
 func node(data string) proxy.Node {

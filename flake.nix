@@ -14,11 +14,11 @@
       package =
         pkgs:
         pkgs.buildGoModule {
-          pname = "sb";
+          pname = "ph";
           version = "0.1.0";
           src = self;
           vendorHash = "sha256-m8p79jpffBdH81rabn6HFGFINeCqegeYVpC8JX6Dwvg=";
-          subPackages = [ "cmd/sb" ];
+          subPackages = [ "cmd/ph" ];
           checkPhase = ''
             runHook preCheck
             go test ./...
@@ -26,33 +26,33 @@
           '';
           meta = {
             description = "Subscription management and proxy client control";
-            mainProgram = "sb";
+            mainProgram = "ph";
             platforms = systems;
           };
         };
     in
     {
-      overlays.default = final: _: { sb = package final; };
+      overlays.default = final: _: { ph = package final; };
       nixosModules.default = { ... }: {
         imports = [ ./nix/modules/nixos.nix ];
-        _module.args.sbFlake = self;
+        _module.args.phFlake = self;
       };
       nixosModules.mihomo = { ... }: {
         imports = [ ./nix/modules/mihomo.nix ];
-        _module.args.sbFlake = self;
+        _module.args.phFlake = self;
       };
       darwinModules.default = { ... }: {
         imports = [ ./nix/modules/darwin.nix ];
-        _module.args.sbFlake = self;
+        _module.args.phFlake = self;
       };
       packages = eachSystem (
         system:
         let
-          sb = package nixpkgs.legacyPackages.${system};
+          ph = package nixpkgs.legacyPackages.${system};
         in
         {
-          inherit sb;
-          default = sb;
+          inherit ph;
+          default = ph;
         }
       );
       devShells = eachSystem (system: {

@@ -11,8 +11,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/term"
-	"github.com/sleroq/sb/internal/app"
-	"github.com/sleroq/sb/internal/backend"
+	"github.com/sleroq/ph/internal/app"
+	"github.com/sleroq/ph/internal/backend"
 )
 
 func makeClient(s app.Settings, name string) (backend.Client, app.Settings, error) {
@@ -53,7 +53,7 @@ func configuredBackends(s app.Settings) []string {
 
 func backendCommand(ctx context.Context, s app.Settings, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: sb backend list|select [NAME]")
+		return fmt.Errorf("usage: ph backend list|select [NAME]")
 	}
 	names := configuredBackends(s)
 	current, err := s.SelectedBackend()

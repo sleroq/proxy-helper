@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/sleroq/sb/internal/files"
-	"github.com/sleroq/sb/proxy"
+	"github.com/sleroq/ph/internal/files"
+	"github.com/sleroq/ph/proxy"
 )
 
 type CachedSource struct {
@@ -69,13 +69,13 @@ func (s Settings) Lock() (*os.File, error) {
 	if err := os.MkdirAll(s.StateDir, 0755); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(filepath.Join(s.StateDir, "sb.lock"), os.O_CREATE|os.O_RDWR, 0600)
+	f, err := os.OpenFile(filepath.Join(s.StateDir, "ph.lock"), os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
 		return nil, err
 	}
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		_ = f.Close()
-		return nil, fmt.Errorf("another sb mutation is running")
+		return nil, fmt.Errorf("another ph mutation is running")
 	}
 	return f, nil
 }

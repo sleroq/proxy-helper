@@ -1,0 +1,17 @@
+#!/bin/sh
+for arg do
+    case "$arg" in
+        --config|--config=*|-config|-config=*) exec /usr/lib/ph/ph "$@" ;;
+    esac
+done
+case "${1-}" in
+    refresh)
+        [ "$#" -eq 1 ] || { echo 'usage: ph refresh' >&2; exit 2; }
+        if [ -d /run/systemd/system ]; then
+            exec systemctl start ph-proxy-update.service
+        fi
+        exec sv restart ph-proxy-update
+        ;;
+    ''|init|version|help|--help|-h) exec /usr/lib/ph/ph "$@" ;;
+esac
+exec /usr/lib/ph/ph --config /etc/ph/config.json "$@"

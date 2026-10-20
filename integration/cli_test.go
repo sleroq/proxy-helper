@@ -24,13 +24,13 @@ import (
 var binary, helper string
 
 func TestMain(m *testing.M) {
-	dir, err := os.MkdirTemp("", "sb-e2e-*")
+	dir, err := os.MkdirTemp("", "ph-e2e-*")
 	if err != nil {
 		panic(err)
 	}
-	binary = filepath.Join(dir, "sb")
+	binary = filepath.Join(dir, "ph")
 	helper = filepath.Join(dir, "helper")
-	for _, build := range [][2]string{{binary, "../cmd/sb"}, {helper, "./testdata/helper"}} {
+	for _, build := range [][2]string{{binary, "../cmd/ph"}, {helper, "./testdata/helper"}} {
 		cmd := exec.Command("go", "build", "-o", build[0], build[1])
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -167,7 +167,7 @@ func (f *fixture) run(input string, wantOK bool, args ...string) string {
 	command.Stdin = strings.NewReader(input)
 	output, err := command.CombinedOutput()
 	if (err == nil) != wantOK {
-		f.t.Fatalf("sb %v: %v\n%s", args, err, output)
+		f.t.Fatalf("ph %v: %v\n%s", args, err, output)
 	}
 	if strings.Contains(string(output), "token=private") || strings.Contains(string(output), "secret-one") {
 		f.t.Fatalf("credential leaked: %s", output)
@@ -762,7 +762,7 @@ func TestRestartCanPrepareWithoutLockConflict(t *testing.T) {
 func TestNativeSingBoxShadowsocks(t *testing.T) {
 	f := newFixture(t)
 	f.config["converter"] = ""
-	if core := os.Getenv("SB_REAL_CORE"); core != "" {
+	if core := os.Getenv("PH_REAL_CORE"); core != "" {
 		f.config["sing_box"] = core
 	}
 	f.write("config.json", f.config)
@@ -821,7 +821,7 @@ func newMihomoFixture(t *testing.T) *fixture {
 	f := newFixture(t)
 	f.config["backend"] = "mihomo"
 	f.config["mihomo"] = helper
-	if core := os.Getenv("SB_REAL_MIHOMO"); core != "" {
+	if core := os.Getenv("PH_REAL_MIHOMO"); core != "" {
 		f.config["mihomo"] = core
 	}
 	f.config["converter"] = ""
@@ -899,6 +899,23 @@ func TestMihomoRejectsUnsupportedConfig(t *testing.T) {
 	}
 }
 
+func TestCLIBranding(t *testing.T) {
+	for _, args := range [][]string{nil, {"help"}, {"--help"}} {
+		cmd := exec.Command(binary, args...)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("ph %v: %v\n%s", args, err, output)
+		}
+		if !strings.HasPrefix(string(output), "Usage: ph [--config PATH] COMMAND\n") {
+			t.Fatalf("unexpected help: %s", output)
+		}
+	}
+	f := newFixture(t)
+	if output := f.run("", false, "unknown"); !strings.Contains(output, "ph: unknown command \"unknown\"; run ph help") {
+		t.Fatal(output)
+	}
+}
+
 func TestStandaloneInit(t *testing.T) {
 	dir := t.TempDir()
 	cmd := exec.Command(binary, "init")
@@ -906,7 +923,7 @@ func TestStandaloneInit(t *testing.T) {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("init: %v %s", err, out)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "sb", "config.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "ph", "config.json")); err != nil {
 		t.Fatal(err)
 	}
 	cmd = exec.Command(binary, "init")
@@ -918,7 +935,7 @@ func TestStandaloneInit(t *testing.T) {
 
 func standaloneSetup(t *testing.T, dir string, f *fixture) (string, string) {
 	t.Helper()
-	configPath := filepath.Join(dir, "sb", "config.json")
+	configPath := filepath.Join(dir, "ph", "config.json")
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		t.Fatal(err)
@@ -959,7 +976,7 @@ func TestStandaloneUserWorkflow(t *testing.T) {
 		cmd := exec.Command(binary, append([]string{"--config", configPath}, args...)...)
 		cmd.Stdin = strings.NewReader(input)
 		if output, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("sb %v: %v\n%s", args, err, output)
+			t.Fatalf("ph %v: %v\n%s", args, err, output)
 		}
 	}
 	entry, err := json.Marshal(map[string]string{"id": "main", "url_file": urlPath})
@@ -976,7 +993,7 @@ func TestStandaloneUserWorkflow(t *testing.T) {
 		t.Fatal("standalone live selection was not changed")
 	}
 	for _, name := range []string{"subscriptions.json", "state/config.json", "state/cache.json"} {
-		info, err := os.Stat(filepath.Join(dir, "sb", name))
+		info, err := os.Stat(filepath.Join(dir, "ph", name))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1001,13 +1018,13 @@ func TestModes(t *testing.T) {
 			t.Fatalf("sing-box check bypass candidate: %v\n%s", err, output)
 		}
 	}
-	if !strings.Contains(config, `"default": "direct"`) || !strings.Contains(config, `"final": "sb-local"`) {
+	if !strings.Contains(config, `"default": "direct"`) || !strings.Contains(config, `"final": "ph-local"`) {
 		t.Fatal(config)
 	}
 	if output := f.run("", false, "bypass", "off"); !strings.Contains(output, "has no cached nodes") {
 		t.Fatal(output)
 	}
-	if output := f.run("", false, "use", "a"); !strings.Contains(output, "sb bypass off") {
+	if output := f.run("", false, "use", "a"); !strings.Contains(output, "ph bypass off") {
 		t.Fatal(output)
 	}
 	checkCachedBypassMode(t, f)
@@ -1081,7 +1098,7 @@ func checkDirectOnlyConfig(t *testing.T, config string) {
 	if err := json.Unmarshal([]byte(config), &installed); err != nil {
 		t.Fatal(err)
 	}
-	if len(installed.Inbounds) != 1 || installed.Inbounds[0].Type != "mixed" || installed.DNS.Final != "sb-local" || len(installed.DNS.Rules) != 0 || len(installed.DNS.Servers) != 1 || installed.DNS.Servers[0].Type != "local" {
+	if len(installed.Inbounds) != 1 || installed.Inbounds[0].Type != "mixed" || installed.DNS.Final != "ph-local" || len(installed.DNS.Rules) != 0 || len(installed.DNS.Servers) != 1 || installed.DNS.Servers[0].Type != "local" {
 		t.Fatal(config)
 	}
 }
@@ -1122,13 +1139,13 @@ func TestModeRequiresRestartAndReportsFailure(t *testing.T) {
 }
 
 func TestRealConverterAndCore(t *testing.T) {
-	core, converter := os.Getenv("SB_REAL_CORE"), os.Getenv("SB_REAL_CONVERTER")
+	core, converter := os.Getenv("PH_REAL_CORE"), os.Getenv("PH_REAL_CONVERTER")
 	if core == "" || converter == "" {
-		t.Skip("set SB_REAL_CORE and SB_REAL_CONVERTER for actual core/converter integration")
+		t.Skip("set PH_REAL_CORE and PH_REAL_CONVERTER for actual core/converter integration")
 	}
 	f := newFixture(t)
 	f.config["sing_box"], f.config["converter"] = core, converter
-	if template := os.Getenv("SB_REAL_TEMPLATE"); template != "" {
+	if template := os.Getenv("PH_REAL_TEMPLATE"); template != "" {
 		f.config["template_file"] = template
 	}
 	f.write("config.json", f.config)
@@ -1198,7 +1215,7 @@ func checkUnavailableManifestMode(t *testing.T, f *fixture) {
 	if err := os.WriteFile(manifestPath, data, 0644); err != nil {
 		t.Fatal(err)
 	}
-	if output := f.run("", false, "use", "a"); !strings.Contains(output, "sb bypass off") {
+	if output := f.run("", false, "use", "a"); !strings.Contains(output, "ph bypass off") {
 		t.Fatal(output)
 	}
 	if output := f.run("", true, "status"); !strings.Contains(output, "installed mode: bypass=true") {

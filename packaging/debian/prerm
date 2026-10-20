@@ -1,3 +1,3 @@
 #!/bin/sh
 set -e
-if [ "$1" = remove ]; then /usr/lib/sb/package-remove; fi
+if [ "$1" = remove ]; then /usr/lib/ph/package-remove; fi

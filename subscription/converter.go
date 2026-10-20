@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sleroq/sb/internal/files"
-	"github.com/sleroq/sb/proxy"
+	"github.com/sleroq/ph/internal/files"
+	"github.com/sleroq/ph/proxy"
 )
 
 // Converter adapts sing-box-sub's CLI. Child output and HTTP errors are not
@@ -70,7 +70,7 @@ func sourceAddress(source Source) (string, error) {
 // It does not fetch, read stores, or apply automatic-selection policy. The
 // source supplies only diagnostic identity and converter filter options.
 func (c Converter) Parse(ctx context.Context, body io.Reader, source Source) ([]proxy.Node, error) {
-	dir, err := os.MkdirTemp("", "sb-convert-*")
+	dir, err := os.MkdirTemp("", "ph-convert-*")
 	if err != nil {
 		return nil, err
 	}

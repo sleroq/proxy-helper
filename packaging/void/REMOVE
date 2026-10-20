@@ -4,7 +4,7 @@ case "$1:${4-no}" in
     pre:yes) ;;
     pre:*)
         if [ -d /var/service ] && pgrep -x runsvdir >/dev/null; then
-            for service in sb-proxy-update sb-proxy; do
+            for service in ph-proxy-update ph-proxy; do
                 if [ -L "/var/service/$service" ]; then
                     sv down "$service"
                     rm "/var/service/$service"

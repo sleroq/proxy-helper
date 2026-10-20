@@ -1,9 +1,13 @@
-# sb
+# ph
 
 A small Go CLI for subscription management and sing-box or mihomo control on Linux and
 macOS. It is not a proxy or service supervisor. The default subscription parser is native Go;
 set `converter` to `sing-box-sub` to opt into the legacy adapter during migration.
 Configuration validation uses your installed proxy core (`sing-box` or `mihomo`).
+
+The rebrand changes command/package names, services, Nix options, and paths that
+use the project name. Existing installations require manual migration of those
+settings and files; preserve private permissions and managed root ownership.
 
 ## Install on Linux
 
@@ -17,23 +21,23 @@ on the installed host. NixOS and nix-darwin remain supported by the modules belo
 ## Standalone setup (manual testing / custom deployments)
 
 Install Go 1.26+ and sing-box, then use the unpackaged CLI below. On an already
-managed host, pass `--config "$HOME/.config/sb/config.json"` to every standalone
+managed host, pass `--config "$HOME/.config/ph/config.json"` to every standalone
 command so it cannot target the system profile. Stop the managed core or choose
 a different standalone API port before running both profiles.
 
 ```sh
-go install ./cmd/sb
-sb init
-sb subscription add <<'JSON'
+go install ./cmd/ph
+ph init
+ph subscription add <<'JSON'
 {"id":"main","url_file":"/absolute/private/subscription-url"}
 JSON
-sb update
-sing-box run -c "$HOME/.config/sb/state/config.json"
+ph update
+sing-box run -c "$HOME/.config/ph/state/config.json"
 ```
 
-The native Linux package's `sb` wrapper defaults to `/etc/sb/config.json`.
-For `sb init` and an unpackaged CLI, configuration defaults to
-`$XDG_CONFIG_HOME/sb/config.json`, falling back to `~/.config/sb/config.json` on
+The native Linux package's `ph` wrapper defaults to `/etc/ph/config.json`.
+For `ph init` and an unpackaged CLI, configuration defaults to
+`$XDG_CONFIG_HOME/ph/config.json`, falling back to `~/.config/ph/config.json` on
 **both** macOS and Linux. Use explicit `--config` for a standalone profile on a
 managed host. `--config PATH` must precede
 the command. `init` creates a native sing-box template with a loopback mixed proxy
@@ -42,8 +46,8 @@ Adjust the template and add a user service manager separately if desired. The
 standalone files and generated config remain owned by your account; no Nix,
 root access, system TUN, or platform-specific service manager is needed. Keep
 the URL file and writable subscription store private (`chmod 600`), and keep
-`~/.config/sb/state` writable only by your account. `sb update` installs a new
-config; start or restart `sing-box run -c ~/.config/sb/state/config.json`
+`~/.config/ph/state` writable only by your account. `ph update` installs a new
+config; start or restart `sing-box run -c ~/.config/ph/state/config.json`
 manually when there is no service. To automate activation, set
 `restart_command` to an argv array for **your own** service manager (for
 example, `systemctl --user restart sing-box.service` on Linux or a user
@@ -56,18 +60,18 @@ reads exactly one source object from stdin and never accepts URLs as CLI argumen
 
 ## Mihomo backend (standalone and legacy NixOS profile)
 
-Install mihomo alongside `sb`, then initialize a **separate** user-owned profile:
+Install mihomo alongside `ph`, then initialize a **separate** user-owned profile:
 
 ```sh
-sb --config "$HOME/.config/sb-mihomo/config.json" init --backend mihomo
-sb --config "$HOME/.config/sb-mihomo/config.json" subscription add <<'JSON'
+ph --config "$HOME/.config/ph-mihomo/config.json" init --backend mihomo
+ph --config "$HOME/.config/ph-mihomo/config.json" subscription add <<'JSON'
 {"id":"main","url_file":"/absolute/private/subscription-url"}
 JSON
-sb --config "$HOME/.config/sb-mihomo/config.json" update
-mihomo -f "$HOME/.config/sb-mihomo/state/config.json" -d "$HOME/.config/sb-mihomo/state"
+ph --config "$HOME/.config/ph-mihomo/config.json" update
+mihomo -f "$HOME/.config/ph-mihomo/state/config.json" -d "$HOME/.config/ph-mihomo/state"
 ```
 
-`sb --config ... list`, `use`, `pin`, `status`, `test`, `check`, and `apply`
+`ph --config ... list`, `use`, `pin`, `status`, `test`, `check`, and `apply`
 use the same source policy, private cache and Clash API workflow. Set
 `restart_command` to your own user-service restart argv to activate updates;
 without it, restart mihomo manually. The generated configuration is JSON (valid
@@ -77,11 +81,11 @@ native DNS and inbound options; it cannot override generated proxies, groups,
 rules, mode or TUN. `api_url` must point to its `external-controller`. Do not
 reuse a sing-box template, state directory, or running listener ports.
 
-The **separate legacy profile** `nixosModules.mihomo` provides `services.sbMihomo.enable`,
-`services.sbMihomo.sources = [{ name = "main"; urlFile = "/run/agenix/url"; }]`,
-a root-owned `sb-mihomo.service`, update timer, and an `sb-mihomo` CLI wrapper.
-It uses `/var/lib/sb-mihomo` independently from the sing-box module. Run
-`sudo sb-mihomo update` once to seed the cache before the service can prepare;
+The **separate legacy profile** `nixosModules.mihomo` provides `services.phMihomo.enable`,
+`services.phMihomo.sources = [{ name = "main"; urlFile = "/run/agenix/url"; }]`,
+a root-owned `ph-mihomo.service`, update timer, and an `ph-mihomo` CLI wrapper.
+It uses `/var/lib/ph-mihomo` independently from the sing-box module. Run
+`sudo ph-mihomo update` once to seed the cache before the service can prepare;
 the update timer handles later refreshes. Set source URLs only via secret files;
 root owns the cache and service. This module has no
 privilege delegation/refresh trigger or TUN support. See
@@ -90,24 +94,24 @@ privilege delegation/refresh trigger or TUN support. See
 ## Daily commands
 
 ```sh
-sb subscription list
-sb update                         # attempt all enabled sources; install viable mixed snapshot
-sb subscription update main       # same as sb update main
-sb list
-sb test                           # default automatic group
-sb test auto-main
-sb use                           # live-only picker (requires stdin/stdout TTY)
-sb use 'a node tag'              # live-only, scriptable
-sb pin 'a node tag'              # persist a leaf and select it live
-sb unpin                         # restore automatic/default selection
-sb bypass on                     # direct routing + local DNS inside sing-box
-sb bypass off                    # restore proxy routing and saved selection
-sb tunnel off                    # stop TUN interception; keep mixed proxy running
-sb tunnel on                     # restore TUN interception
-sb status
-sb config                         # best-effort redaction; file permissions apply
-sudo sb config --raw               # explicitly root-only
-sb check
+ph subscription list
+ph update                         # attempt all enabled sources; install viable mixed snapshot
+ph subscription update main       # same as ph update main
+ph list
+ph test                           # default automatic group
+ph test auto-main
+ph use                           # live-only picker (requires stdin/stdout TTY)
+ph use 'a node tag'              # live-only, scriptable
+ph pin 'a node tag'              # persist a leaf and select it live
+ph unpin                         # restore automatic/default selection
+ph bypass on                     # direct routing + local DNS inside sing-box
+ph bypass off                    # restore proxy routing and saved selection
+ph tunnel off                    # stop TUN interception; keep mixed proxy running
+ph tunnel on                     # restore TUN interception
+ph status
+ph config                         # best-effort redaction; file permissions apply
+sudo ph config --raw               # explicitly root-only
+ph check
 ```
 
 `list`, `status`, `test`, and `use` need the running Clash API. `pin`/`unpin`
@@ -147,7 +151,7 @@ Example non-secret CLI configuration:
   "sing_box": "sing-box",
   "converter": "",
   "stores": [
-    {"name":"declared", "path":"/run/agenix/sb-subscriptions", "writable":false},
+    {"name":"declared", "path":"/run/agenix/ph-subscriptions", "writable":false},
     {"name":"local", "path":"subscriptions.json", "writable":true}
   ],
   "overrides_file": "overrides.json"
@@ -193,23 +197,23 @@ Each store has the same schema:
   source identity. `subscription reset ID` removes all overrides for that ID and
   restores declared policy. Store files can be editable symlinks: atomic writes
   preserve the symlink and replace its resolved target.
-- CLI edits are **staged**. `sb apply` composes cached nodes, validates, installs,
-  and restarts; `sb update` also fetches. This lets several edits be applied
-  together. `sb prepare` is the offline, no-restart service-start operation.
+- CLI edits are **staged**. `ph apply` composes cached nodes, validates, installs,
+  and restarts; `ph update` also fetches. This lets several edits be applied
+  together. `ph prepare` is the offline, no-restart service-start operation.
   Deleted source caches are removed on the next successful apply/update.
 
 ## Automatic selection
 
 ```sh
-sb subscription auto main --enabled false
-sb subscription auto main --enabled true --exclude-tag 'test|expired'
-sb subscription auto main --include-server '\.example\.net$'
-sb subscription auto main --exclude-server '^slow\.' --exclude-server '^old\.'
-sb subscription auto main --clear
-sb subscription disable main
-sb subscription enable main
-sb subscription reset main
-sb apply
+ph subscription auto main --enabled false
+ph subscription auto main --enabled true --exclude-tag 'test|expired'
+ph subscription auto main --include-server '\.example\.net$'
+ph subscription auto main --exclude-server '^slow\.' --exclude-server '^old\.'
+ph subscription auto main --clear
+ph subscription disable main
+ph subscription enable main
+ph subscription reset main
+ph apply
 ```
 
 Filters use Go regular expressions. Within an inclusion list, any pattern can
@@ -227,20 +231,20 @@ Static/extra outbounds remain automatic candidates in this release.
 
 ## Bypass, interception, and fail-closed
 
-`sb bypass on` routes traffic **entering sing-box** directly, including DNS
+`ph bypass on` routes traffic **entering sing-box** directly, including DNS
 queries handled by sing-box. It renders a direct-only selector (no proxy nodes
 or URLTest needed), a direct route final, and only a local DNS resolver;
 remote DNS servers and DNS routing rules are omitted while bypassed so they
 cannot send queries via a proxy detour. Custom templates that force unsupported outbound routes
-are rejected rather than silently bypassed. `sb bypass off` restores the
+are rejected rather than silently bypassed. `ph bypass off` restores the
 normal proxy route and saved pin/automatic choice; without any proxy nodes it
-fails and leaves bypass intact. Selecting a proxy with `sb use` does **not**
+fails and leaves bypass intact. Selecting a proxy with `ph use` does **not**
 turn bypass off. This does not change the OS resolver or stop applications' own
 DNS-over-HTTPS connections.
 
-`sb tunnel off` instead removes recognized TUN inbounds from the generated
+`ph tunnel off` instead removes recognized TUN inbounds from the generated
 config and restarts sing-box; mixed proxy inbounds and their normal routing
-remain. `sb tunnel on` restores the template's TUN. Standalone templates without
+remain. `ph tunnel on` restores the template's TUN. Standalone templates without
 TUN cannot use this toggle. Both controls persist privately in
 `state_dir/mode.json` (0600) through `prepare`, updates, and restarts; they
 require the state owner's authorization and a configured `restart_command`.
@@ -258,69 +262,69 @@ Disabling subscriptions is not a way to disable transparent interception.
 
 The flake exports `packages.<system>.default`, `overlays.default`,
 `nixosModules.default`, and `darwinModules.default`. Import the appropriate
-module and set `services.sb.enable = true`, `services.sb.subscription.enable =
-true`, optionally `services.sb.converterPackage` (the `sing-box-sub` package), and secret
+module and set `services.ph.enable = true`, `services.ph.subscription.enable =
+true`, optionally `services.ph.converterPackage` (the `sing-box-sub` package), and secret
 `subscription.sources = [{ name = "main"; urlFile = "/run/agenix/provider-url"; }]`.
 The default template is a loopback mixed proxy; configure a native TUN, DNS,
-and routing with `services.sb.settings` only on hosts that need transparent
-routing. The module generates a non-secret `/etc/sb/config.json` and an `sb`
+and routing with `services.ph.settings` only on hosts that need transparent
+routing. The module generates a non-secret `/etc/ph/config.json` and an `ph`
 wrapper that uses it. Existing root-owned `/var/lib/sing-box` state and legacy
-caches remain in place; `sb-proxy` runs only `sb run` against the installed,
-prevalidated state config. Run `sudo sb update` (or `sudo sb apply` with a
+caches remain in place; `ph-proxy` runs only `ph run` against the installed,
+prevalidated state config. Run `sudo ph update` (or `sudo ph apply` with a
 usable cache) once to seed state **before** starting the service; startup does
-not prepare a config. The root-owned update timer runs `sb update`. Do not switch services before reviewing generated
+not prepare a config. The root-owned update timer runs `ph update`. Do not switch services before reviewing generated
 config and secret paths. Never put plaintext `url` values in Nix files.
 
 To enable selection on NixOS or nix-darwin, configure:
 
 ```nix
-services.sb.backends = {
+services.ph.backends = {
   "sing-box" = pkgs.sing-box;
   mihomo = pkgs.mihomo;
 };
-services.sb.defaultBackend = "sing-box";
-services.sb.converterPackage = null; # native URI parser; recommended for mixed clients
+services.ph.defaultBackend = "sing-box";
+services.ph.converterPackage = null; # native URI parser; recommended for mixed clients
 # Override either package in the map, e.g. mihomo = myMihomoPackage;
-# services.sb.mihomo.settings = { dns.enable = true; };
+# services.ph.mihomo.settings = { dns.enable = true; };
 ```
 
-The default backend map is `{ "sing-box" = services.sb.package; }`, retaining
+The default backend map is `{ "sing-box" = services.ph.package; }`, retaining
 existing sing-box package overrides. Both cores use one root-owned state/cache,
-proxy port 1080, loopback API and **one** `sb-proxy` service; they never run
+proxy port 1080, loopback API and **one** `ph-proxy` service; they never run
 concurrently. Multi-backend configurations require the sing-box loopback mixed
 listener on port 1080 and reject a sing-box TUN inbound, since mihomo cannot
 preserve its interception behavior. Both templates expose the loopback Clash API
 when multiple backends are configured, even without subscriptions. Converter-specific cached nodes can fail mihomo
 validation and block a switch; use the native parser (`converterPackage = null`)
-for portable shared caches. The native mihomo template is independent of `services.sb.settings`
-and accepts `services.sb.mihomo.settings` (JSON). It excludes managed proxies,
+for portable shared caches. The native mihomo template is independent of `services.ph.settings`
+and accepts `services.ph.mihomo.settings` (JSON). It excludes managed proxies,
 groups, providers, rules, mode and TUN; listener and API must remain loopback-only.
-Use `sb backend list` to inspect available cores, then `sudo sb backend select
+Use `ph backend list` to inspect available cores, then `sudo ph backend select
 mihomo` (or `sing-box`) to validate, install and restart. Omit the name for an
 interactive picker when stdin/stdout are terminals. Switching requires
 state-owner authorization, briefly interrupts proxy traffic, and preserves the
-installed config if validation fails. If restart or readiness fails, `sb` attempts
+installed config if validation fails. If restart or readiness fails, `ph` attempts
 to restore the previous config and restart the old core; inspect the service if
-rollback itself fails. A custom service restart must launch `sb run` without
-calling `sb prepare`, because switching holds the state lock across restart. Existing bypass/tunnel mode,
+rollback itself fails. A custom service restart must launch `ph run` without
+calling `ph prepare`, because switching holds the state lock across restart. Existing bypass/tunnel mode,
 static/extra outbounds or legacy complete-outbounds settings can reject an
 incompatible switch; clear them explicitly rather than assuming translation.
-The standalone `services.sbMihomo` module remains a **separate legacy profile**,
-not another service to enable alongside selectable `services.sb`.
+The standalone `services.phMihomo` module remains a **separate legacy profile**,
+not another service to enable alongside selectable `services.ph`.
 
-For managed hosts, set `services.sb.refreshUser = "USERNAME"`. **`sb refresh`**
+For managed hosts, set `services.ph.refreshUser = "USERNAME"`. **`ph refresh`**
 then requests a fixed, argument-free update without sudo: NixOS permits that
-user via polkit to *start only* `sb-proxy-update.service`; the root unit fetches,
+user via polkit to *start only* `ph-proxy-update.service`; the root unit fetches,
 validates, installs, and restarts. nix-darwin gives that user write access only
 to `/var/lib/sing-box/refresh-request` (0600) inside a root-owned directory;
 launchd watches the file and runs the same fixed root update. The Darwin request
-is asynchronous: `sb refresh` confirms the trigger was touched, **not** that
-fetch or activation succeeded; inspect `sb status` and the service log. WatchPaths
-can coalesce rapid requests, so this is not a synchronous RPC. `sb refresh ID`
+is asynchronous: `ph refresh` confirms the trigger was touched, **not** that
+fetch or activation succeeded; inspect `ph status` and the service log. WatchPaths
+can coalesce rapid requests, so this is not a synchronous RPC. `ph refresh ID`
 is refused; selecting a source for a privileged update requires the owner to
-run `sb update ID` directly. If `refreshUser` is unset, no user is granted a
-refresh trigger. User accounts may still use read-only `sb status`, `sb list`,
-`sb test`, and live-only `sb use` via the loopback Clash API.
+run `ph update ID` directly. If `refreshUser` is unset, no user is granted a
+refresh trigger. User accounts may still use read-only `ph status`, `ph list`,
+`ph test`, and live-only `ph use` via the loopback Clash API.
 
 The root-owned state directory, cache, overrides, local subscription store,
 mode/pin files, and backend config are **not** user-writable; subscription URLs
@@ -354,13 +358,13 @@ legacy files are left intact; remove them manually after verifying migration.
   activation use cases. It owns the `Backend` contract, not client implementations.
 - `internal/backend`: adapters implement that contract with a selected parser,
   template, renderer, validation command and live controller.
-- `cmd/sb`: the composition root chooses one adapter from settings and owns
+- `cmd/ph`: the composition root chooses one adapter from settings and owns
   arguments and terminal presentation.
 
 There is no DI framework or generic repository layer. Backend-specific decisions
 are made once in the CLI composition root, not scattered through use cases.
 Public packages are intended for reuse but their APIs are pre-1.0. The module path
-is `github.com/sleroq/sb`; until published, consume the local module using Go's
+is `github.com/sleroq/ph`; until published, consume the local module using Go's
 `replace` directive or a workspace.
 
 ## Failure and security boundaries
@@ -386,7 +390,7 @@ public export API. HTTPS subscription URLs are recommended; HTTP is allowed for
 private/local providers. The API client currently supports unauthenticated local
 Clash endpoints only. Keep the controller loopback-bound. Loopback is a network
 boundary, not local-user authorization: the cores expose runtime configuration
-endpoints beyond `sb`'s live-selection commands. These defaults trust every local
+endpoints beyond `ph`'s live-selection commands. These defaults trust every local
 user/process and are not appropriate for untrusted multi-user hosts.
 
 ## Verification
@@ -401,6 +405,6 @@ GitHub CI runs Go tests on Linux/macOS and native package lifecycle tests in
 Docker for Debian/Arch/Void using actual systemd/runit and both real proxy cores.
 See [managed Linux verification](docs/linux.md#build-and-automatic-verification).
 The Go suite exercises compiled CLI processes, real local HTTP, filesystem
-permissions/symlinks, and subprocess doubles for the converter and validator. Optional real-core coverage uses `SB_REAL_CORE` and
-`SB_REAL_CONVERTER` absolute paths, with optional `SB_REAL_TEMPLATE` to validate
+permissions/symlinks, and subprocess doubles for the converter and validator. Optional real-core coverage uses `PH_REAL_CORE` and
+`PH_REAL_CONVERTER` absolute paths, with optional `PH_REAL_TEMPLATE` to validate
 an existing non-secret native template. It does not contact real providers or start TUN.

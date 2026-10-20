@@ -12,15 +12,15 @@ case "$distro" in
 esac
 root=$(CDPATH='' cd -- "$(dirname "$0")/../.." && pwd)
 [ -f "$root/scripts/build-packages.sh" ] || { echo 'missing scripts/build-packages.sh' >&2; exit 1; }
-for file in sb sing-box mihomo LICENSE-sing-box LICENSE-mihomo COPYING; do test -s "$input/$file"; done
+for file in ph sing-box mihomo LICENSE-sing-box LICENSE-mihomo COPYING; do test -s "$input/$file"; done
 output=$(mktemp -d)
-name=sb-distro-$distro-$$
-image=sb-distro-builder:$distro-$arch
+name=ph-distro-$distro-$$
+image=ph-distro-builder:$distro-$arch
 cleanup() {
  result=$?
  if [ "$result" -ne 0 ]; then
   docker logs "$name" >&2 || :
-  docker exec "$name" timeout -k 1 10 sh -c 'cat /tmp/*.log; if command -v journalctl >/dev/null; then journalctl --no-pager -n 150; else sv status /var/service/*; ls -l /var/service /etc/sv/*/supervise; cat /var/log/sb-proxy*/current; fi' >&2 || :
+  docker exec "$name" timeout -k 1 10 sh -c 'cat /tmp/*.log; if command -v journalctl >/dev/null; then journalctl --no-pager -n 150; else sv status /var/service/*; ls -l /var/service /etc/sv/*/supervise; cat /var/log/ph-proxy*/current; fi' >&2 || :
  fi
  docker rm -f "$name" >/dev/null 2>&1 || :
  rm -rf "$output"
@@ -32,7 +32,7 @@ for version in 0.0.1 0.0.2; do
  version_input=$output/input-$version
  mkdir "$version_input"
  for file in sing-box mihomo LICENSE-sing-box LICENSE-mihomo COPYING; do cp "$input/$file" "$version_input/$file"; done
- (cd "$root" && CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -ldflags "-s -w -X main.version=$version" -o "$version_input/sb" ./cmd/sb)
+ (cd "$root" && CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -ldflags "-s -w -X main.version=$version" -o "$version_input/ph" ./cmd/ph)
  "$root/tests/distros/build.sh" "$distro" "$version" "$arch" "$version_input" "$output/$version"
 done
 if [ "$distro" = void ]; then

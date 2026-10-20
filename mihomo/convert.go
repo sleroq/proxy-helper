@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/sleroq/sb/proxy"
+	"github.com/sleroq/ph/proxy"
 )
 
 func convert(node proxy.Node) (map[string]json.RawMessage, error) {

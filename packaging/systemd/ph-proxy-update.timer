@@ -1,5 +1,5 @@
 [Unit]
-Description=Daily sb subscription refresh
+Description=Daily ph subscription refresh
 
 [Timer]
 OnBootSec=5min

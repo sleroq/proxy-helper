@@ -13,7 +13,7 @@ import (
 // secret fields not recognized here.
 func (m Manager) Config(raw bool) ([]byte, error) {
 	if raw && os.Geteuid() != 0 {
-		return nil, fmt.Errorf("sb config --raw requires root")
+		return nil, fmt.Errorf("ph config --raw requires root")
 	}
 	data, err := os.ReadFile(m.Settings.ConfigPath())
 	if err != nil {

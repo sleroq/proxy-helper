@@ -10,9 +10,9 @@ import (
 	"slices"
 	"time"
 
-	"github.com/sleroq/sb/internal/files"
-	"github.com/sleroq/sb/proxy"
-	"github.com/sleroq/sb/subscription"
+	"github.com/sleroq/ph/internal/files"
+	"github.com/sleroq/ph/proxy"
+	"github.com/sleroq/ph/subscription"
 )
 
 type Manager struct {
@@ -309,7 +309,7 @@ func assembleManifest(sources []subscription.Source, cache Cache, bypass bool) (
 			continue
 		}
 		if !ok && !bypass {
-			return nil, nil, Manifest{}, fmt.Errorf("subscription %s has no cached nodes; run sb update %s", source.ID, source.ID)
+			return nil, nil, Manifest{}, fmt.Errorf("subscription %s has no cached nodes; run ph update %s", source.ID, source.ID)
 		}
 
 		info := SourceInfo{

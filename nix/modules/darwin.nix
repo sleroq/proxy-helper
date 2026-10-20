@@ -2,13 +2,13 @@
   config,
   lib,
   pkgs,
-  sbModule,
+  phModule,
   ...
 }:
 let
-  cfg = config.services.sb;
+  cfg = config.services.ph;
   sub = cfg.subscription;
-  log = "/var/log/sb-proxy.log";
+  log = "/var/log/ph-proxy.log";
 in
 {
   imports = [ ./common.nix ];
@@ -16,35 +16,35 @@ in
     assertions = [
       {
         assertion = cfg.routingMark == 0;
-        message = "services.sb.routingMark is Linux-only.";
+        message = "services.ph.routingMark is Linux-only.";
       }
       {
         assertion = cfg.extraCapabilities == [ ];
-        message = "services.sb.extraCapabilities is Linux-only.";
+        message = "services.ph.extraCapabilities is Linux-only.";
       }
     ];
     system.activationScripts.preActivation.text = lib.mkIf (sub.enable && cfg.refreshUser != null) ''
       ${pkgs.coreutils}/bin/install -d -o root -g wheel -m 0755 ${lib.escapeShellArg cfg.stateDir}
       ${pkgs.coreutils}/bin/install -o ${lib.escapeShellArg cfg.refreshUser} -g wheel -m 0600 /dev/null ${lib.escapeShellArg "${cfg.stateDir}/refresh-request"}
     '';
-    launchd.daemons.sb-proxy.serviceConfig = {
-      ProgramArguments = [ "${sbModule.runner}" ];
+    launchd.daemons.ph-proxy.serviceConfig = {
+      ProgramArguments = [ "${phModule.runner}" ];
       RunAtLoad = true;
       KeepAlive = true;
       StandardOutPath = log;
       StandardErrorPath = log;
     };
-    launchd.daemons.sb-proxy-update = lib.mkIf sub.enable {
+    launchd.daemons.ph-proxy-update = lib.mkIf sub.enable {
       serviceConfig = {
-        ProgramArguments = [ "${sbModule.update}" ];
+        ProgramArguments = [ "${phModule.update}" ];
         StartInterval = sub.updateInterval;
         StandardOutPath = log;
         StandardErrorPath = log;
       };
     };
-    launchd.daemons.sb-proxy-refresh = lib.mkIf (sub.enable && cfg.refreshUser != null) {
+    launchd.daemons.ph-proxy-refresh = lib.mkIf (sub.enable && cfg.refreshUser != null) {
       serviceConfig = {
-        ProgramArguments = [ "${sbModule.update}" ];
+        ProgramArguments = [ "${phModule.update}" ];
         WatchPaths = [ "${cfg.stateDir}/refresh-request" ];
         StandardOutPath = log;
         StandardErrorPath = log;

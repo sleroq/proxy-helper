@@ -8,10 +8,10 @@ install_package() {
   debian) dpkg -i /artifacts/"$1"/*.deb ;;
   arch) pacman --disable-sandbox -U --noconfirm /artifacts/"$1"/*.pkg.tar.zst ;;
   void)
-   if xbps-query sb >/dev/null 2>&1; then
-    xbps-install -yu --repository /artifacts/"$1" sb
+   if xbps-query ph >/dev/null 2>&1; then
+    xbps-install -yu --repository /artifacts/"$1" ph
    else
-    xbps-install -y --repository /artifacts/"$1" sb
+    xbps-install -y --repository /artifacts/"$1" ph
    fi ;;
  esac
 }
@@ -31,7 +31,7 @@ core_pid() {
 from pathlib import Path
 for p in Path('/proc').glob('[0-9]*/cmdline'):
     args = p.read_bytes().split(b'\0')
-    if b'/var/lib/sb/config.json' in args and any(binary in args for binary in (b'/usr/lib/sb/sing-box', b'/usr/lib/sb/mihomo')):
+    if b'/var/lib/ph/config.json' in args and any(binary in args for binary in (b'/usr/lib/ph/sing-box', b'/usr/lib/ph/mihomo')):
         print(p.parent.name)
         break
 else:
@@ -40,7 +40,7 @@ PY
 }
 update_service() {
  previous=$(core_pid)
- sb refresh
+ ph refresh
  attempt=0
 while [ "$attempt" -lt 30 ]; do
  attempt=$((attempt + 1))
@@ -58,33 +58,33 @@ assert s.st_uid == 0 and stat.S_IMODE(s.st_mode) == 0o600, (sys.argv[1], s)
 PY
 }
 install_package 0.0.1
-[ "$(sb version)" = 0.0.1 ]
-expect_failure sb refresh fixture
-[ "$(command -v sb)" = /usr/bin/sb ]
-test ! -e /var/lib/sb/config.json
+[ "$(ph version)" = 0.0.1 ]
+expect_failure ph refresh fixture
+[ "$(command -v ph)" = /usr/bin/ph ]
+test ! -e /var/lib/ph/config.json
 case "$distro" in
  void)
-    test -L /var/service/sb-proxy; test -L /var/service/sb-proxy-update
+    test -L /var/service/ph-proxy; test -L /var/service/ph-proxy-update
     attempt=0
     while [ "$attempt" -lt 30 ]; do
      attempt=$((attempt + 1))
-     if sv status /var/service/sb-proxy /var/service/sb-proxy-update; then break; fi
+     if sv status /var/service/ph-proxy /var/service/ph-proxy-update; then break; fi
      sleep 1
     done
-    sv status /var/service/sb-proxy /var/service/sb-proxy-update ;;
- *) systemctl is-enabled sb-proxy.service; systemctl is-enabled sb-proxy-update.timer
-    expect_failure systemctl is-active --quiet sb-proxy.service ;;
+    sv status /var/service/ph-proxy /var/service/ph-proxy-update ;;
+ *) systemctl is-enabled ph-proxy.service; systemctl is-enabled ph-proxy-update.timer
+    expect_failure systemctl is-active --quiet ph-proxy.service ;;
 esac
 python3 /project/tests/distros/fixture.py >/tmp/fixture.log 2>&1 &
 cat >/tmp/server.json <<'JSON'
 {"inbounds":[{"type":"shadowsocks","listen":"127.0.0.1","listen_port":18388,"method":"aes-128-gcm","password":"fixture-secret"}],"outbounds":[{"type":"direct"}]}
 JSON
-/usr/lib/sb/sing-box run -c /tmp/server.json >/tmp/server.log 2>&1 &
+/usr/lib/ph/sing-box run -c /tmp/server.json >/tmp/server.log 2>&1 &
 # Edit managed configuration/templates so upgrades must preserve real local changes.
 python3 - <<'PY'
 import json
 from pathlib import Path
-p = Path('/etc/sb/config.json')
+p = Path('/etc/ph/config.json')
 s = json.loads(p.read_text())
 s['test_url'] = 'http://127.0.0.1:18080/health'
 p.write_text(json.dumps(s, indent=2) + '\n')
@@ -93,54 +93,54 @@ for backend in s['backends'].values():
     p.write_text(p.read_text() + '\n')
 PY
 umask 077
-printf '%s\n' http://127.0.0.1:18080/subscription >/etc/sb/fixture-url
-printf '%s\n' '{"id":"fixture","url_file":"/etc/sb/fixture-url"}' | sb subscription add
-private_file /etc/sb/fixture-url
+printf '%s\n' http://127.0.0.1:18080/subscription >/etc/ph/fixture-url
+printf '%s\n' '{"id":"fixture","url_file":"/etc/ph/fixture-url"}' | ph subscription add
+private_file /etc/ph/fixture-url
 attempt=0
 while [ "$attempt" -lt 30 ]; do
  attempt=$((attempt + 1))
  if curl -fsS --max-time 1 http://127.0.0.1:18080/health >/dev/null; then break; fi
  sleep 1
 done
-sb update
+ph update
 wait_proxy
-sb status
-sb list
+ph status
+ph list
 # The manifest gives the actual imported tag, not an assumed converter naming rule.
-tag=$(python3 -c 'import json; print(json.load(open("/var/lib/sb/subscription.json"))["nodes"][0]["tag"])')
-sb use "$tag"
-sb pin "$tag"
-sb apply
+tag=$(python3 -c 'import json; print(json.load(open("/var/lib/ph/subscription.json"))["nodes"][0]["tag"])')
+ph use "$tag"
+ph pin "$tag"
+ph apply
 wait_proxy
-chmod 0644 /var/lib/sb/subscriptions.json
-/usr/lib/sb/initialize
-private_file /var/lib/sb/subscriptions.json
-private_file /var/lib/sb/cache.json
-private_file /var/lib/sb/config.json
-private_file /var/lib/sb/pin.json
+chmod 0644 /var/lib/ph/subscriptions.json
+/usr/lib/ph/initialize
+private_file /var/lib/ph/subscriptions.json
+private_file /var/lib/ph/cache.json
+private_file /var/lib/ph/config.json
+private_file /var/lib/ph/pin.json
 useradd -m tester
 for backend in mihomo sing-box; do
- sb backend select "$backend"
+ ph backend select "$backend"
  wait_proxy
- sb test
- su -s /bin/sh tester -c 'sb list && sb status'
- su -s /bin/sh tester -c "sb use '$tag'"
- expect_failure su -s /bin/sh tester -c 'cat /var/lib/sb/cache.json'
- expect_failure su -s /bin/sh tester -c 'cat /var/lib/sb/config.json'
- expect_failure su -s /bin/sh tester -c "sb pin '$tag'"
- expect_failure su -s /bin/sh tester -c 'sb subscription delete fixture'
+ ph test
+ su -s /bin/sh tester -c 'ph list && ph status'
+ su -s /bin/sh tester -c "ph use '$tag'"
+ expect_failure su -s /bin/sh tester -c 'cat /var/lib/ph/cache.json'
+ expect_failure su -s /bin/sh tester -c 'cat /var/lib/ph/config.json'
+ expect_failure su -s /bin/sh tester -c "ph pin '$tag'"
+ expect_failure su -s /bin/sh tester -c 'ph subscription delete fixture'
  python3 - "$tag" <<'PY'
 import json, sys
-m = json.load(open('/var/lib/sb/subscription.json'))
+m = json.load(open('/var/lib/ph/subscription.json'))
 assert m['pinnedTag'] == sys.argv[1] and m['pinActive']
 PY
  update_service
  wait_proxy
 done
 # Failed-all-source updates cannot replace the installed configuration or stop traffic.
-sha256sum /var/lib/sb/config.json >/tmp/config.sha
+sha256sum /var/lib/ph/config.json >/tmp/config.sha
 touch /tmp/fail-source
-expect_failure sb update
+expect_failure ph update
 sha256sum -c /tmp/config.sha
 wait_proxy
 rm /tmp/fail-source
@@ -148,19 +148,19 @@ rm /tmp/fail-source
 python3 - <<'PY'
 import hashlib, json
 from pathlib import Path
-paths = list(Path('/etc/sb').rglob('*'))
-paths += [Path('/var/lib/sb') / name for name in ('cache.json', 'pin.json', 'active-backend.json', 'subscriptions.json', 'mode.json', 'overrides.json')]
+paths = list(Path('/etc/ph').rglob('*'))
+paths += [Path('/var/lib/ph') / name for name in ('cache.json', 'pin.json', 'active-backend.json', 'subscriptions.json', 'mode.json', 'overrides.json')]
 json.dump({str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths if p.is_file()}, open('/tmp/preserved.json', 'w'))
 PY
 previous=$(core_pid)
 install_package 0.0.2
-[ "$(sb version)" = 0.0.2 ]
+[ "$(ph version)" = 0.0.2 ]
 wait_proxy
 [ "$(core_pid)" != "$previous" ] || fail 'upgrade did not restart the active core'
 case "$distro" in
- debian) test "$(dpkg-query -W -f='${Version}' sb)" = 0.0.2 ;;
- arch) pacman -Q sb | grep -E '^sb 0\.0\.2(-[0-9]+)?$' ;;
- void) xbps-query -p pkgver sb | grep -E '^sb-0\.0\.2_[0-9]+$' ;;
+ debian) test "$(dpkg-query -W -f='${Version}' ph)" = 0.0.2 ;;
+ arch) pacman -Q ph | grep -E '^ph 0\.0\.2(-[0-9]+)?$' ;;
+ void) xbps-query -p pkgver ph | grep -E '^ph-0\.0\.2_[0-9]+$' ;;
 esac
 python3 - <<'PY'
 import hashlib, json
@@ -169,12 +169,12 @@ for name, digest in json.load(open('/tmp/preserved.json')).items():
     assert hashlib.sha256(Path(name).read_bytes()).hexdigest() == digest, name
 PY
 wait_proxy
-sb status
-sb list
+ph status
+ph list
 case "$distro" in
- debian) dpkg -r sb ;;
- arch) pacman --disable-sandbox -R --noconfirm sb ;;
- void) xbps-remove -y sb ;;
+ debian) dpkg -r ph ;;
+ arch) pacman --disable-sandbox -R --noconfirm ph ;;
+ void) xbps-remove -y ph ;;
 esac
 attempt=0
 while [ "$attempt" -lt 30 ]; do
@@ -183,12 +183,12 @@ while [ "$attempt" -lt 30 ]; do
  sleep 1
 done
 expect_failure proxy
-test -s /var/lib/sb/cache.json
-test -s /var/lib/sb/pin.json
-test -s /etc/sb/config.json
+test -s /var/lib/ph/cache.json
+test -s /var/lib/ph/pin.json
+test -s /etc/ph/config.json
 case "$distro" in
- void) test ! -L /var/service/sb-proxy; test ! -L /var/service/sb-proxy-update ;;
- *) expect_failure systemctl is-active --quiet sb-proxy.service
-    expect_failure systemctl is-active --quiet sb-proxy-update.timer ;;
+ void) test ! -L /var/service/ph-proxy; test ! -L /var/service/ph-proxy-update ;;
+ *) expect_failure systemctl is-active --quiet ph-proxy.service
+    expect_failure systemctl is-active --quiet ph-proxy-update.timer ;;
 esac
 echo "PASS: $distro managed lifecycle (both real cores)"

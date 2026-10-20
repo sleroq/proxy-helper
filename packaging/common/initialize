@@ -3,25 +3,25 @@ set -e
 check_root_path() {
     path=$1
     if [ -L "$path" ] || [ "$(stat -c %u "$path")" != 0 ]; then
-        echo "sb: refusing non-root-owned or symlink path: $path" >&2
+        echo "ph: refusing non-root-owned or symlink path: $path" >&2
         exit 1
     fi
     mode=$(stat -c %a "$path")
     if [ "$((0$mode & 022))" -ne 0 ]; then
-        echo "sb: refusing group/world-writable path: $path" >&2
+        echo "ph: refusing group/world-writable path: $path" >&2
         exit 1
     fi
 }
-if [ -e /var/lib/sb ] || [ -L /var/lib/sb ]; then
-    check_root_path /var/lib/sb
-    [ -d /var/lib/sb ] || { echo 'sb: state path is not a directory' >&2; exit 1; }
+if [ -e /var/lib/ph ] || [ -L /var/lib/ph ]; then
+    check_root_path /var/lib/ph
+    [ -d /var/lib/ph ] || { echo 'ph: state path is not a directory' >&2; exit 1; }
 else
-    install -d -o root -g root -m 0755 /var/lib/sb
+    install -d -o root -g root -m 0755 /var/lib/ph
 fi
-if [ -e /var/lib/sb/subscriptions.json ] || [ -L /var/lib/sb/subscriptions.json ]; then
-    check_root_path /var/lib/sb/subscriptions.json
-    [ -f /var/lib/sb/subscriptions.json ] || { echo 'sb: registry is not a regular file' >&2; exit 1; }
-    chmod 0600 /var/lib/sb/subscriptions.json
+if [ -e /var/lib/ph/subscriptions.json ] || [ -L /var/lib/ph/subscriptions.json ]; then
+    check_root_path /var/lib/ph/subscriptions.json
+    [ -f /var/lib/ph/subscriptions.json ] || { echo 'ph: registry is not a regular file' >&2; exit 1; }
+    chmod 0600 /var/lib/ph/subscriptions.json
 else
-    (umask 077; printf '%s\n' '{"subscriptions":[]}' > /var/lib/sb/subscriptions.json)
+    (umask 077; printf '%s\n' '{"subscriptions":[]}' > /var/lib/ph/subscriptions.json)
 fi

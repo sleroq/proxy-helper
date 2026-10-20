@@ -13,8 +13,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/term"
-	"github.com/sleroq/sb/internal/app"
-	"github.com/sleroq/sb/internal/backend"
+	"github.com/sleroq/ph/internal/app"
+	"github.com/sleroq/ph/internal/backend"
 )
 
 type pickerRow struct{ tag, source, server string }
@@ -184,7 +184,7 @@ func (m picker) View() tea.View {
 		label, state = "SELECT BACKEND", "ACTIVE"
 	}
 	lines := []string{
-		clip(paint("◆  SB", "#5eead4", true) + paint("  /  "+label, "#c4b5fd", true)),
+		clip(paint("◆  PH", "#5eead4", true) + paint("  /  "+label, "#c4b5fd", true)),
 		clip(paint(state+"  ", muted, true) + paint(safeText(m.now), "#86efac", true)),
 	}
 	if !m.backend {

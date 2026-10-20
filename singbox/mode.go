@@ -119,11 +119,11 @@ func bypassLocalServer(servers []map[string]json.RawMessage) (string, map[string
 	for _, server := range servers {
 		var tag string
 		_ = json.Unmarshal(server["tag"], &tag)
-		if tag == "sb-local" {
+		if tag == "ph-local" {
 			return "", nil, fmt.Errorf("local DNS tag collision")
 		}
 	}
-	return "sb-local", map[string]json.RawMessage{"type": field("local"), "tag": field("sb-local")}, nil
+	return "ph-local", map[string]json.RawMessage{"type": field("local"), "tag": field("ph-local")}, nil
 }
 
 func directRule(rule map[string]json.RawMessage) error {

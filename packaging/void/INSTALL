@@ -2,14 +2,14 @@
 set -e
 case "$1" in
     post)
-        /usr/lib/sb/initialize
-        /usr/lib/sb/log-initialize
+        /usr/lib/ph/initialize
+        /usr/lib/ph/log-initialize
         if [ -d /var/service ] && pgrep -x runsvdir >/dev/null; then
-            for service in sb-proxy sb-proxy-update; do
+            for service in ph-proxy ph-proxy-update; do
                 if [ ! -e "/var/service/$service" ]; then
                     ln -s "/etc/sv/$service" "/var/service/$service"
-                elif [ "$service" = sb-proxy ]; then
-                    sv restart sb-proxy
+                elif [ "$service" = ph-proxy ]; then
+                    sv restart ph-proxy
                 fi
             done
         fi

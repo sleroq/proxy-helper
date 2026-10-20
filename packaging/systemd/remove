@@ -1,5 +1,5 @@
 #!/bin/sh
 set -e
 if [ -d /run/systemd/system ]; then
-    systemctl disable --now sb-proxy-update.timer sb-proxy-update.service sb-proxy.service
+    systemctl disable --now ph-proxy-update.timer ph-proxy-update.service ph-proxy.service
 fi

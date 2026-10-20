@@ -1,4 +1,4 @@
 #!/bin/sh
 exec 2>&1
-if [ ! -f /var/lib/sb/config.json ]; then exec sleep 60; fi
-exec /usr/bin/sb run
+if [ ! -f /var/lib/ph/config.json ]; then exec sleep 60; fi
+exec /usr/bin/ph run

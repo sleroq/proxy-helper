@@ -1,4 +1,4 @@
 #!/bin/sh
 exec 2>&1
-/usr/bin/sb update
+/usr/bin/ph update
 exec sleep 86400

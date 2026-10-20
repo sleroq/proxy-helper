@@ -1,16 +1,16 @@
 {
   "backend": "sing-box",
   "backends": {
-    "sing-box": {"binary": "/usr/lib/sb/sing-box", "template_file": "/etc/sb/sing-box.json"},
-    "mihomo": {"binary": "/usr/lib/sb/mihomo", "template_file": "/etc/sb/mihomo.json"}
+    "sing-box": {"binary": "/usr/lib/ph/sing-box", "template_file": "/etc/ph/sing-box.json"},
+    "mihomo": {"binary": "/usr/lib/ph/mihomo", "template_file": "/etc/ph/mihomo.json"}
   },
-  "state_dir": "/var/lib/sb",
+  "state_dir": "/var/lib/ph",
   "api_url": "http://127.0.0.1:9090",
   "test_url": "https://www.gstatic.com/generate_204",
   "test_interval": "5m",
   "tolerance": 50,
-  "restart_command": ["systemctl", "restart", "sb-proxy.service"],
-  "stores": [{"name": "local", "path": "/var/lib/sb/subscriptions.json", "writable": true}],
-  "overrides_file": "/var/lib/sb/overrides.json",
+  "restart_command": ["systemctl", "restart", "ph-proxy.service"],
+  "stores": [{"name": "local", "path": "/var/lib/ph/subscriptions.json", "writable": true}],
+  "overrides_file": "/var/lib/ph/overrides.json",
   "exclude_protocols": "ssr"
 }

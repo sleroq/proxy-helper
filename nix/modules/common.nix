@@ -2,11 +2,11 @@
   config,
   lib,
   pkgs,
-  sbFlake,
+  phFlake,
   ...
 }:
 let
-  cfg = config.services.sb;
+  cfg = config.services.ph;
   sub = cfg.subscription;
   json = pkgs.formats.json { };
   state = cfg.stateDir;
@@ -65,7 +65,7 @@ let
       exclude_servers = source.excludeServers;
     }) namedSources;
   };
-  settings = json.generate "sb-config.json" (
+  settings = json.generate "ph-config.json" (
     {
       template_file = toString template;
       backend = cfg.defaultBackend;
@@ -100,14 +100,14 @@ let
           [
             "${pkgs.systemd}/bin/systemctl"
             "restart"
-            "sb-proxy.service"
+            "ph-proxy.service"
           ]
         else
           [
             "/bin/launchctl"
             "kickstart"
             "-k"
-            "system/org.nixos.sb-proxy"
+            "system/org.nixos.ph-proxy"
           ];
     }
     // lib.optionalAttrs (cfg.staticOutbounds != [ ]) { static_outbounds_file = toString static; }
@@ -119,23 +119,23 @@ let
     }
     // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux { routing_mark = cfg.routingMark; }
   );
-  sb = pkgs.writeShellScriptBin "sb" ''
+  ph = pkgs.writeShellScriptBin "ph" ''
     if [ "''${1-}" = refresh ]; then
-      if [ "$#" -ne 1 ]; then echo "sb refresh takes no arguments" >&2; exit 2; fi
+      if [ "$#" -ne 1 ]; then echo "ph refresh takes no arguments" >&2; exit 2; fi
       ${
         if pkgs.stdenv.hostPlatform.isLinux then
-          "exec ${pkgs.systemd}/bin/systemctl start sb-proxy-update.service"
+          "exec ${pkgs.systemd}/bin/systemctl start ph-proxy-update.service"
         else
           "exec ${pkgs.coreutils}/bin/touch ${lib.escapeShellArg "${state}/refresh-request"}"
       }
     fi
-    exec ${cfg.cliPackage}/bin/sb --config ${settings} "$@"
+    exec ${cfg.cliPackage}/bin/ph --config ${settings} "$@"
   '';
-  update = pkgs.writeShellScript "sb-proxy-update" ''
-    exec ${sb}/bin/sb update
+  update = pkgs.writeShellScript "ph-proxy-update" ''
+    exec ${ph}/bin/ph update
   '';
-  runner = pkgs.writeShellScript "sb-proxy-run" ''
-    exec ${sb}/bin/sb run
+  runner = pkgs.writeShellScript "ph-proxy-run" ''
+    exec ${ph}/bin/ph run
   '';
   sourceType = lib.types.submodule {
     options = {
@@ -176,8 +176,8 @@ let
   };
 in
 {
-  options.services.sb = {
-    enable = lib.mkEnableOption "proxy client managed by sb";
+  options.services.ph = {
+    enable = lib.mkEnableOption "proxy client managed by ph";
     package = lib.mkOption {
       type = lib.types.package;
       default = pkgs.sing-box;
@@ -203,7 +203,7 @@ in
     };
     cliPackage = lib.mkOption {
       type = lib.types.package;
-      default = pkgs.sb or sbFlake.packages.${pkgs.stdenv.hostPlatform.system}.sb;
+      default = pkgs.ph or phFlake.packages.${pkgs.stdenv.hostPlatform.system}.ph;
     };
     converterPackage = lib.mkOption {
       type = lib.types.nullOr lib.types.package;
@@ -315,11 +315,11 @@ in
               "mihomo"
             ]
           ) (builtins.attrNames cfg.backends);
-        message = "services.sb.backends must contain only sing-box and/or mihomo and cannot be empty.";
+        message = "services.ph.backends must contain only sing-box and/or mihomo and cannot be empty.";
       }
       {
         assertion = builtins.hasAttr cfg.defaultBackend cfg.backends;
-        message = "services.sb.defaultBackend must be included in services.sb.backends.";
+        message = "services.ph.defaultBackend must be included in services.ph.backends.";
       }
       {
         assertion =
@@ -331,7 +331,7 @@ in
             || cfg.mihomo.settings ? mode
             || cfg.mihomo.settings ? tun
           );
-        message = "sb manages mihomo proxies, groups, rules and mode; native providers and TUN are unsupported.";
+        message = "ph manages mihomo proxies, groups, rules and mode; native providers and TUN are unsupported.";
       }
       {
         assertion =
@@ -349,7 +349,7 @@ in
       }
       {
         assertion = !(cfg.settings ? outbounds);
-        message = "Use services.sb.staticOutbounds instead of settings.outbounds.";
+        message = "Use services.ph.staticOutbounds instead of settings.outbounds.";
       }
       {
         assertion =
@@ -372,7 +372,7 @@ in
       }
       {
         assertion = cfg.refreshUser == null || sub.enable;
-        message = "services.sb.refreshUser requires subscription.enable.";
+        message = "services.ph.refreshUser requires subscription.enable.";
       }
       {
         assertion =
@@ -399,11 +399,11 @@ in
         message = "Subscription source names must be unique.";
       }
     ];
-    environment.systemPackages = builtins.attrValues cfg.backends ++ [ sb ];
-    environment.etc."sb/config.json".source = settings;
-    _module.args.sbModule = {
+    environment.systemPackages = builtins.attrValues cfg.backends ++ [ ph ];
+    environment.etc."ph/config.json".source = settings;
+    _module.args.phModule = {
       inherit
-        sb
+        ph
         update
         runner
         settings

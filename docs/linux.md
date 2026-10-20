@@ -103,6 +103,7 @@ registries, templates, or caches. `ph init` creates a separate user-owned XDG
 profile for manual use; `--config PATH` selects another profile explicitly.
 
 Removal stops/disables services but retains state and edited configuration.
+Arch saves edited configuration as `.pacsave` files.
 Debian `apt purge ph` removes native conffiles, but not `/var/lib/ph` or provider
 secret files. Review backups and delete secrets manually when retiring a host.
 

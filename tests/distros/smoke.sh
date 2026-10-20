@@ -199,7 +199,10 @@ done
 expect_failure proxy
 test -s /var/lib/ph/cache.json
 test -s /var/lib/ph/pin.json
-test -s /etc/ph/config.json
+case "$distro" in
+    arch) test -s /etc/ph/config.json.pacsave ;;
+    *) test -s /etc/ph/config.json ;;
+esac
 case "$distro" in
     void)
         test ! -L /var/service/ph-proxy

@@ -1,17 +1,21 @@
 ph native Linux package
 
-Run root-managed commands with appropriate root privileges. Add subscriptions
-with ph subscription add, then seed with ph update. No proxy configuration is
-created until a successful update. ph refresh requests the native update service;
-no sudo policy is installed. ph init remains a manual XDG installation path.
-Local mixed proxy: 127.0.0.1:1080; control API: 127.0.0.1:9090. No TUN by default.
-Configuration and templates in /etc/ph are preserved on upgrades. State lives in
-/var/lib/ph and is never removed by hooks. Debian purge removes native conffiles;
-back up /etc/ph before purge. Other package managers retain edited config files
-according to their native backup/config_files behavior.
+Configuration: /etc/ph; state: /var/lib/ph. Services run as root.
+Add subscriptions with sudo ph subscription add, then seed with sudo ph update.
+ph refresh requests the native update service; no sudo policy is installed.
+ph update updates subscriptions, not software. Use the package manager to upgrade.
 
-Bundled sing-box and mihomo are GPLv3 projects. Their supplied license texts are
-installed alongside this file as LICENSE-sing-box and LICENSE-mihomo. Sources:
+Mixed proxy: 127.0.0.1:1080; core API: 127.0.0.1:9090. No TUN or host routing.
+The unauthenticated core API trusts all local users and exposes runtime
+configuration controls. Do not use these defaults with untrusted local users
+or give root-run services user-writable configuration, templates, or state.
+
+Upgrades preserve state and edited configuration. Removal retains private state;
+Debian purge removes native conffiles. Delete provider secrets manually.
+Installation and service commands: https://github.com/sleroq/proxy-helper/blob/master/docs/linux.md
+
+Bundled sing-box and mihomo are GPLv3 projects. License texts are supplied as
+LICENSE-sing-box and LICENSE-mihomo. Sources:
 https://github.com/SagerNet/sing-box
 https://github.com/MetaCubeX/mihomo
 This notice makes no license claim for ph itself.

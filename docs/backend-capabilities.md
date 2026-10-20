@@ -1,49 +1,38 @@
-# Client capability decision
+# Supported clients
 
-**First additional backend: mihomo.** Its native selectable URL-test groups and
-Clash REST endpoints match ph's selection model. Xray's JSON outbounds and gRPC
-routing API require a separate controller; a Clash-shaped API alone never implies
-config, DNS or route compatibility. ph remains a short-lived composer/controller,
-not a proxy supervisor.
+ph supports sing-box and mihomo. Both use shared subscriptions, caches,
+filters, automatic groups, live selection, and persistent pins.
 
-| Capability | mihomo | Xray |
+| Feature | sing-box | mihomo |
 | --- | --- | --- |
-| Subscriptions | HTTP/file/inline native proxy providers consume compatible proxy definitions; ph instead retains its shared URI fetch/cache/policy and converts supported nodes. Arbitrary Clash YAML is **not** accepted by ph's URI parser. | JSON outbounds; no built-in generic HTTP subscription provider in the core configuration. Client-side conversion would be necessary. |
-| Protocols | Native core supports SS, Trojan, VMess, VLESS and more; **ph currently imports only** basic URI-list SS, Trojan, VMess, VLESS with TCP/WS/gRPC, TLS/Reality where representable. Converter-specific options and other types fail closed. | Core supports its own outbound dialect; ph has no Xray renderer. |
-| Live selection/latency | Select and URL-test groups; Clash REST `/proxies/proxy` and `/group/{name}/delay` used by ph. | gRPC routing/balancer and observatory, not drop-in Clash REST. |
-| DNS/TUN | Native DNS and TUN; ph permits native DNS template settings but generates **no TUN**, bypass or tunnel controls. | Native DNS and TUN; OS routing and DNS hijack need separate integration. |
-| Native validation | `mihomo -t -f CONFIG -d STATE_DIR`; installed candidate tested before commit. | `xray run -test -c CONFIG`. |
-| Packaging | Official macOS/Linux releases, `pkgs.mihomo` in nixpkgs; ph offers selectable managed backends on NixOS/nix-darwin and a separate legacy NixOS profile. | Official macOS/Linux releases, `pkgs.xray` in nixpkgs; no ph module. |
+| Native URI subscriptions | Yes | Yes |
+| Optional `sing-box-sub` converter | Yes | No |
+| Native JSON template | Yes | Yes |
+| Static/extra outbounds | Yes | No |
+| Bypass and TUN controls | Yes, with a suitable template | No |
+| Linux routing mark | Yes | No |
 
-Sources: [mihomo provider dialect](https://wiki.metacubex.one/en/config/proxy-providers/),
-[API](https://wiki.metacubex.one/en/api/),
-[proxy groups](https://wiki.metacubex.one/en/config/proxy-groups/url-test/),
-[DNS](https://wiki.metacubex.one/en/config/dns/),
-[TUN](https://wiki.metacubex.one/en/config/inbound/tun/),
-[Xray configuration](https://xtls.github.io/en/config/),
-[Xray routing](https://xtls.github.io/en/config/routing.html),
-[Xray API](https://xtls.github.io/en/config/api.html),
-[Xray TUN](https://xtls.github.io/en/config/inbounds/tun.html).
+## Subscription formats
 
-## Contract and limitations
+- Plain or base64 URI lists: Shadowsocks, Trojan, VLESS, and base64-JSON VMess.
+- Basic TCP, WebSocket, gRPC, TLS, and Reality parameters.
+- No Clash YAML, native mihomo providers, SSR, Hysteria, or TUIC imports.
+- Malformed or unsupported entries are skipped. An unusable source keeps its cache.
+- Mihomo rejects node options it cannot translate. Core support alone does not
+  imply ph support.
 
-`subscription` owns URL files, fetch, source policies and parsing into shared
-`proxy.Node` values. `internal/app` owns the `Backend` port, private cache,
-public manifest, modes, validation orchestration, install and restart argv.
-`cmd/ph` selects a concrete `internal/backend` adapter at startup; adapters
-own client-specific parsing, config composition, validation command and live
-controller. `singbox` and `mihomo` own **different** config dialects; the optional sing-box converter, sing-box static/extra/legacy
-outbounds and Linux `routing_mark` are unavailable on mihomo. A custom mihomo
-template must be JSON (JSON is valid YAML) and cannot contain sing-box fields or
-replace generated routing. Native mihomo providers/Clash YAML are not yet imported
-by ph; hybrid sidecars and fail-closed firewall rules are out of scope.
+For sing-box-only providers, set `converter` to an installed `sing-box-sub`
+executable. Use the native parser for shared, switchable caches.
 
-Only fields explicitly converted from cached sing-box-shaped URI nodes are emitted:
-name, type, server/port, credentials, VMess cipher/alterId, VLESS flow, TLS SNI,
-ALPN, insecure flag, uTLS fingerprint, Reality public key/short ID, WS path/headers,
-and gRPC service name. Unknown protocol/transport fields reject the candidate
-rather than silently changing its security or routing semantics. Mihomo's `profile.store-selected` is forced off (an explicit `true` is
-rejected): `use` remains live-only, while `pin` owns durable selection. A stale pin
-remains saved but defaults to auto/manual when its leaf disappears. The selectable managed service shares one state directory and port, with only one active core. The standalone/legacy profiles require distinct state dirs and listener ports for concurrent clients. Credentials and raw native
-validation diagnostics are not printed by `ph update`; `ph check` forwards core
-diagnostics explicitly.
+## Templates and switching
+
+- Client templates use different schemas. Do not reuse one across clients.
+- ph owns mihomo proxies, groups, rules, mode, and TUN settings.
+  Native DNS settings are allowed.
+- Mihomo's `profile.store-selected` must stay off. Use `ph pin` for saved selection.
+- Switching runs one core at a time. It validates, restarts, and checks readiness.
+  On activation failure, ph attempts to restore the previous core and config.
+- Incompatible modes, TUN settings, or outbounds can block a switch.
+  Nothing translates host routing or firewall policy.
+
+See [usage](usage.md#switch-clients) for commands and standalone configuration.

@@ -1,41 +1,39 @@
-# Native managed lifecycle tests
+# Native package builds and lifecycle tests
+
+Run from the repository root with Go, curl, sha256sum, and Docker installed.
+Docker must support the selected platform and privileged containers.
 
 ```sh
-tests/distros/run.sh debian /absolute/path/to/input arm64
-tests/distros/run.sh arch /absolute/path/to/input amd64
-tests/distros/run.sh void /absolute/path/to/input arm64
+# Build the CLI, verified upstream cores, and license files.
+scripts/build-linux.sh 1.2.3 amd64 build/input
 
-# Package production only (also used by the test runner):
-tests/distros/build.sh debian 1.2.3 arm64 /absolute/path/to/input ./output
+# Produce a package without running lifecycle tests.
+tests/distros/build.sh debian 1.2.3 amd64 build/input dist
+
+# Test installation, operation, upgrade, and removal.
+tests/distros/run.sh debian build/input amd64
 ```
 
-Input contains executable `ph`, actual `sing-box` 1.14.3 and `mihomo`
-1.19.32, and `LICENSE-sing-box` / `LICENSE-mihomo` / `COPYING`. Prepare it with
-`scripts/build-linux.sh VERSION ARCH INPUT_DIR`. Architectures are `amd64`
-or `arm64` (host default for `run.sh`); Docker must support the selected
-platform. Arch's public base image supports amd64 only. Prefer native-architecture
-runners: local ARM/QEMU testing timed out bootstrapping Arch systemd 262, before
-any ph service ran. GitHub CI uses a native amd64 runner for that lifecycle.
+Replace `debian` with `arch` or `void`. Architectures are `amd64` and `arm64`;
+Arch supports only `amd64`. `run.sh` defaults to the host architecture. Prefer
+native-architecture runners.
 
-The builder calls `scripts/build-packages.sh DISTRO VERSION ARCH INPUT_DIR
-OUTPUT_DIR` inside Debian trixie, Arch `archlinux:base`, or official
-`ghcr.io/void-linux/void-glibc-full:latest`. The host needs Docker and Go, not native
-packaging tools. `run.sh` rebuilds the CLI at 0.0.1 and 0.0.2 from the local
-project, reusing the prepared cores and licenses; `build.sh` packages its input
-unchanged. Builder images remain cached; test containers and temporary
-packages are removed, with container/service logs printed on failure.
+`build.sh` packages its input unchanged using native tools in distro containers.
+`run.sh` rebuilds the local CLI as versions 0.0.1 and 0.0.2, reusing the input's
+cores and licenses. Builder images are cached; test containers and temporary
+packages are removed, with logs printed on failure.
 
-Tests require privileged containers: real systemd PID 1 (a minimal basic target,
-private cgroup namespace with Docker-managed writable cgroups) or real Void
-runsvdir PID 1. Systemd's binfmt service is masked so container startup cannot
-reset the host's cross-architecture emulation. Supervisor readiness uses ten
-timed probes; the lifecycle smoke test has a 300-second deadline. No simulated cores
-or silent skips: local HTTP subscriptions feed a real Shadowsocks server,
-and HTTP traffic traverses each installed core's mixed proxy.
+The suite runs real systemd or runit, local HTTP subscription fixtures, and a
+real Shadowsocks server. It checks both cores' proxy traffic, selection/pins,
+apply/update, scheduled updates, failed-update rollback, unprivileged access
+boundaries, upgrades preserving state/configuration, and removal. It uses no
+provider credentials or host TUN routing.
 
-The lifecycle covers native installation, managed defaults and private state,
-subscription stdin/url_file, live selection and persistent pin, apply/update,
-real scheduled update service restarts, both backend switches, rootless reads
-and live use after switching, rootless mutation denial, failed-source rollback,
-package version upgrade and retained state/local edits, active core restart,
-and removal with preserved state and stopped services.
+CI runs Debian and Void on amd64/arm64 and Arch on amd64, plus uncached
+`go test -race -count=1 ./...` on Linux/macOS and Go analysis on Linux. Successful
+`vVERSION` releases publish packages, checksums, and corresponding bundled-core
+source archives. Core pins are in `scripts/fetch-cores.sh`; source archives are
+built by `scripts/core-sources.sh`.
+
+For installation, configuration, and security requirements, see
+[Managed Linux installations](../../docs/linux.md).

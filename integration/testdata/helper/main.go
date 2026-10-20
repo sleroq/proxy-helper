@@ -1,5 +1,5 @@
-// Integration subprocess double: converter copies HTTP fixture JSON, while the
-// core validates JSON and can deliberately reject a candidate.
+// Integration subprocess double: the core validates JSON and can deliberately
+// reject a candidate.
 package main
 
 import (
@@ -43,22 +43,5 @@ func main() {
 		return
 	}
 
-	if len(args) == 0 {
-		os.Exit(1)
-	}
-
-	data, err := os.ReadFile(args[0])
-	if err != nil {
-		os.Exit(1)
-	}
-
-	output := ""
-	for i := 1; i < len(args)-1; i++ {
-		if args[i] == "--out" {
-			output = args[i+1]
-		}
-	}
-	if os.WriteFile(output, data, 0600) != nil {
-		os.Exit(1)
-	}
+	os.Exit(1)
 }

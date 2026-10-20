@@ -26,7 +26,6 @@ type Settings struct {
 	Backend             string                     `json:"backend,omitempty"`
 	Backends            map[string]BackendSettings `json:"backends,omitempty"`
 	Mihomo              string                     `json:"mihomo,omitempty"`
-	Converter           string                     `json:"converter"`
 	RestartCommand      []string                   `json:"restart_command,omitempty"`
 	Stores              []subscription.Store       `json:"stores"`
 	OverridesFile       string                     `json:"overrides_file"`

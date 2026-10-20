@@ -33,7 +33,6 @@ type Config struct {
 	Name                string
 	SingBox             string
 	Mihomo              string
-	Converter           string
 	LegacyOutboundsFile string
 	StaticOutboundsFile string
 	ExtraOutboundsFile  string
@@ -46,7 +45,7 @@ func New(config Config) (Client, error) {
 		if config.SingBox == "" {
 			config.SingBox = "sing-box"
 		}
-		return singBox{binary: config.SingBox, converter: config.Converter}, nil
+		return singBox{binary: config.SingBox}, nil
 	case "mihomo":
 		if err := config.validateMihomo(); err != nil {
 			return nil, err

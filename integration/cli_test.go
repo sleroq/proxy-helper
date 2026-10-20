@@ -71,7 +71,6 @@ func newFixture(t *testing.T) *fixture {
 		"state_dir":      "state",
 		"api_url":        f.server.URL,
 		"sing_box":       helper,
-		"converter":      helper,
 		"overrides_file": "overrides.json",
 		"stores": []any{
 			map[string]any{"name": "declared", "path": "declared.json", "writable": false},
@@ -81,10 +80,8 @@ func newFixture(t *testing.T) *fixture {
 	f.write("template.json", map[string]any{"route": map[string]any{"final": "proxy"}})
 	f.write("declared.json", map[string]any{"subscriptions": []any{f.source("one", "/one"), f.source("two", "/two")}})
 	f.write("config.json", f.config)
-	f.setBody("/one", `[{"type":"shadowsocks","tag":"a","server":"one.example",
-		"password":"secret-one","server_port":443,"future_number":9007199254740993}]`)
-	f.setBody("/two", `[{"type":"shadowsocks","tag":"b","server":"two.example",
-		"password":"secret-two","server_port":443}]`)
+	f.setBody("/one", "trojan://secret-one@one.example:443#a")
+	f.setBody("/two", "trojan://secret-two@two.example:443#b")
 	return f
 }
 
@@ -426,6 +423,10 @@ func TestCLIWorkflow(t *testing.T) {
 }
 
 func (f *fixture) workflowUpdate(t *testing.T) {
+	f.write("template.json", map[string]any{
+		"route":         map[string]any{"final": "proxy"},
+		"future_number": json.Number("9007199254740993"),
+	})
 	f.run("", true, "update")
 	config := f.read("state/config.json")
 	if !strings.Contains(config, "9007199254740993") || !strings.Contains(config, "auto-one") {
@@ -511,7 +512,7 @@ func (f *fixture) workflowSymlink(t *testing.T) {
 	if err != nil || link != "editable.json" {
 		t.Fatal("store symlink replaced")
 	}
-	f.setBody("/three", `[{"type":"shadowsocks","tag":"c","server":"three.example"}]`)
+	f.setBody("/three", "trojan://password@three.example:443#c")
 	f.run("", true, "update", "three")
 	f.run("", true, "subscription", "delete", "three")
 	f.run("", true, "apply")
@@ -531,7 +532,7 @@ func TestFailedUpdatePreservesInstalledState(t *testing.T) {
 			}
 			switch failure {
 			case "collision":
-				f.setBody("/two", `[{"type":"shadowsocks","tag":"a","server":"two.example"}]`)
+				f.setBody("/two", "trojan://password@two.example:443#a")
 			case "core":
 				f.write("template.json", map[string]any{"reject": true})
 			}
@@ -572,7 +573,7 @@ func TestPartialAndAllFailedUpdates(t *testing.T) {
 
 func (f *fixture) partialRefresh(t *testing.T) {
 	old := f.read("state/cache.json")
-	f.setBody("/one", `[{"type":"shadowsocks","tag":"new","server":"new.example"}]`)
+	f.setBody("/one", "trojan://password@new.example:443#new")
 	f.mu.Lock()
 	delete(f.bodies, "/two")
 	f.mu.Unlock()
@@ -608,7 +609,7 @@ func (f *fixture) allFailedRefresh(t *testing.T) {
 }
 
 func (f *fixture) targetedRecovery(t *testing.T) {
-	f.setBody("/one", `[{"type":"shadowsocks","tag":"newer","server":"newer.example"}]`)
+	f.setBody("/one", "trojan://password@newer.example:443#newer")
 	f.run("", true, "update", "one")
 	if status := f.run("", true, "status"); !strings.Contains(status, "two: stale") {
 		t.Fatal("targeted update erased other health: ", status)
@@ -674,7 +675,7 @@ func TestManySourcesAndLegacyMigration(t *testing.T) {
 		id := fmt.Sprintf("source%d", i)
 		path := "/" + id
 		sources = append(sources, f.source(id, path))
-		f.setBody(path, fmt.Sprintf(`[{"tag":"node%d","type":"shadowsocks","server":"host%d.example"}]`, i, i))
+		f.setBody(path, fmt.Sprintf("trojan://password@host%d.example:443#node%d", i, i))
 	}
 	f.write("declared.json", map[string]any{"subscriptions": sources})
 	f.run("", true, "update")
@@ -730,7 +731,7 @@ func TestUpdateBootstrapsLegacyCacheWithoutSourceMapping(t *testing.T) {
 		t.Fatal("partial bootstrap did not install viable source and unavailable entry")
 	}
 	f.run("", true, "prepare")
-	f.setBody("/two", `[{"type":"shadowsocks","tag":"b","server":"two.example"}]`)
+	f.setBody("/two", "trojan://password@two.example:443#b")
 	f.run("", true, "update")
 	f.run("", true, "prepare")
 	if strings.Contains(f.read("state/cache.json"), "old.example") {
@@ -768,7 +769,6 @@ func TestRestartCanPrepareWithoutLockConflict(t *testing.T) {
 
 func TestNativeSingBoxShadowsocks(t *testing.T) {
 	f := newFixture(t)
-	f.config["converter"] = ""
 	if core := os.Getenv("PH_REAL_CORE"); core != "" {
 		f.config["sing_box"] = core
 	}
@@ -804,7 +804,6 @@ func TestNativeSingBoxShadowsocks(t *testing.T) {
 
 func TestNativeSingBoxReality(t *testing.T) {
 	f := newFixture(t)
-	f.config["converter"] = ""
 	if core := os.Getenv("PH_REAL_CORE"); core != "" {
 		f.config["sing_box"] = core
 	}
@@ -850,7 +849,6 @@ func newMihomoFixture(t *testing.T) *fixture {
 	if core := os.Getenv("PH_REAL_MIHOMO"); core != "" {
 		f.config["mihomo"] = core
 	}
-	f.config["converter"] = ""
 	f.config["restart_command"] = []string{helper, "restart-ok", filepath.Join(f.dir, "restarts")}
 	f.write("config.json", f.config)
 	f.write("template.json", map[string]any{"mixed-port": 2080, "external-controller": "127.0.0.1:9090"})
@@ -971,7 +969,6 @@ func standaloneSetup(t *testing.T, dir string, f *fixture) (string, string) {
 		t.Fatal(err)
 	}
 	settings["sing_box"] = helper
-	settings["converter"] = helper
 	settings["api_url"] = f.server.URL
 	settings["restart_command"] = []string{}
 	data, err = json.Marshal(settings)
@@ -1186,13 +1183,13 @@ func TestModeRequiresRestartAndReportsFailure(t *testing.T) {
 	}
 }
 
-func TestRealConverterAndCore(t *testing.T) {
-	core, converter := os.Getenv("PH_REAL_CORE"), os.Getenv("PH_REAL_CONVERTER")
-	if core == "" || converter == "" {
-		t.Skip("set PH_REAL_CORE and PH_REAL_CONVERTER for actual core/converter integration")
+func TestRealNativeParserAndCore(t *testing.T) {
+	core := os.Getenv("PH_REAL_CORE")
+	if core == "" {
+		t.Skip("set PH_REAL_CORE for native URI parsing and actual core integration")
 	}
 	f := newFixture(t)
-	f.config["sing_box"], f.config["converter"] = core, converter
+	f.config["sing_box"] = core
 	if template := os.Getenv("PH_REAL_TEMPLATE"); template != "" {
 		f.config["template_file"] = template
 	}
@@ -1211,7 +1208,7 @@ func TestRealConverterAndCore(t *testing.T) {
 	f.setBody("/two", "ss://"+credentials+"@127.0.0.1:8389#real-two\n")
 	f.run("", true, "update")
 	if !strings.Contains(f.read("state/config.json"), "one-real-one") {
-		t.Fatal("converter prefix was not applied")
+		t.Fatal("native subscription prefix was not applied")
 	}
 	f.run("", true, "check")
 	f.run("", true, "subscription", "auto", "one", "--enabled", "false")

@@ -22,7 +22,7 @@ func makeClient(s app.Settings, name string) (backend.Client, app.Settings, erro
 	}
 	s.TemplateFile = template
 	cfg := backend.Config{
-		Name: name, Converter: s.Converter, LegacyOutboundsFile: s.LegacyOutboundsFile,
+		Name: name, LegacyOutboundsFile: s.LegacyOutboundsFile,
 		StaticOutboundsFile: s.StaticOutboundsFile, ExtraOutboundsFile: s.ExtraOutboundsFile,
 		RoutingMark: s.RoutingMark,
 	}

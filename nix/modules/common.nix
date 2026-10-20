@@ -80,11 +80,6 @@ let
       inherit (sub) tolerance;
       sing_box =
         if builtins.hasAttr "sing-box" cfg.backends then "${cfg.backends."sing-box"}/bin/sing-box" else "";
-      converter =
-        if builtins.hasAttr "sing-box" cfg.backends && cfg.converterPackage != null then
-          "${cfg.converterPackage}/bin/sing-box-sub"
-        else
-          "";
       exclude_protocols = sub.excludeProtocols;
       exclude_node_names = sub.excludeNodeNames;
       overrides_file = "${state}/overrides.json";
@@ -204,10 +199,6 @@ in
     cliPackage = lib.mkOption {
       type = lib.types.package;
       default = pkgs.ph or phFlake.packages.${pkgs.stdenv.hostPlatform.system}.ph;
-    };
-    converterPackage = lib.mkOption {
-      type = lib.types.nullOr lib.types.package;
-      default = pkgs.sing-box-subscribe-cli or null;
     };
     stateDir = lib.mkOption {
       type = lib.types.str;

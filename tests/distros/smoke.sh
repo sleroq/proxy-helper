@@ -120,7 +120,7 @@ ph update
 wait_proxy
 ph status
 ph list
-# The manifest gives the actual imported tag, not an assumed converter naming rule.
+# Read the imported tag from the manifest rather than assuming its naming rule.
 tag=$(python3 -c 'import json; print(json.load(open("/var/lib/ph/subscription.json"))["nodes"][0]["tag"])')
 ph use "$tag"
 ph pin "$tag"

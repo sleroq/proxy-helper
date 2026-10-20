@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 
 	"github.com/sleroq/ph/proxy"
-	"github.com/sleroq/ph/subscription"
 )
 
 type Options struct {
@@ -17,7 +16,6 @@ type Options struct {
 type Backend interface {
 	Name() string
 	Ready(context.Context, string) error
-	Fetch(context.Context, subscription.Source) ([]proxy.Node, error)
 	Compose(json.RawMessage, []proxy.Group, []proxy.Node, Options) (json.RawMessage, error)
 	Legacy(json.RawMessage, []proxy.Node, uint) (json.RawMessage, error)
 	SelectorDefault(json.RawMessage) (string, error)

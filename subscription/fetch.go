@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"time"
 )
 
 const responseLimit = 8 << 20
@@ -24,9 +23,6 @@ func fetchResponse(ctx context.Context, source Source, client *http.Client) (*ht
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
 	if err != nil {
 		return nil, fmt.Errorf("source %s: invalid request", source.ID)
-	}
-	if client == nil {
-		client = &http.Client{Timeout: 60 * time.Second}
 	}
 	response, err := client.Do(request)
 	if err != nil {

@@ -9,7 +9,6 @@ import (
 	"github.com/sleroq/ph/internal/app"
 	"github.com/sleroq/ph/mihomo"
 	"github.com/sleroq/ph/proxy"
-	"github.com/sleroq/ph/subscription"
 )
 
 type mihomoClient struct{ binary string }
@@ -23,10 +22,6 @@ func (b mihomoClient) Template() json.RawMessage {
 		"allow-lan":false,
 		"external-controller":"127.0.0.1:9090"
 	}`)
-}
-
-func (b mihomoClient) Fetch(ctx context.Context, source subscription.Source) ([]proxy.Node, error) {
-	return (subscription.Native{}).Fetch(ctx, source)
 }
 
 func (b mihomoClient) Compose(template json.RawMessage, groups []proxy.Group, extra []proxy.Node, opts app.Options) (json.RawMessage, error) {

@@ -110,7 +110,7 @@ func (m Manager) fetchSources(ctx context.Context, sources []subscription.Source
 		if source.ExcludeNodeNames == "" {
 			source.ExcludeNodeNames = s.ExcludeNodeNames
 		}
-		nodes, err := m.Backend.Fetch(ctx, source)
+		nodes, err := (subscription.Native{}).Fetch(ctx, source)
 		if err != nil {
 			health[source.ID] = SourceHealth{AttemptedAt: now, Error: err.Error()}
 			if _, ok := cache[source.ID]; !ok {

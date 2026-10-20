@@ -15,7 +15,6 @@ The flake also exports a default package and `overlays.default`.
       mihomo = pkgs.mihomo;
     };
     defaultBackend = "sing-box";
-    converterPackage = null; # Native parser for shared caches.
     subscription = {
       enable = true;
       sources = [{

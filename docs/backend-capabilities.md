@@ -6,7 +6,6 @@ filters, automatic groups, live selection, and persistent pins.
 | Feature | sing-box | mihomo |
 | --- | --- | --- |
 | Native URI subscriptions | Yes | Yes |
-| Optional `sing-box-sub` converter | Yes | No |
 | Native JSON template | Yes | Yes |
 | Static/extra outbounds | Yes | No |
 | Bypass and TUN controls | Yes, with a suitable template | No |
@@ -21,8 +20,7 @@ filters, automatic groups, live selection, and persistent pins.
 - Mihomo rejects node options it cannot translate. Core support alone does not
   imply ph support.
 
-For sing-box-only providers, set `converter` to an installed `sing-box-sub`
-executable. Use the native parser for shared, switchable caches.
+Subscriptions use the native URI parser for both clients and share the same cache.
 
 ## Templates and switching
 

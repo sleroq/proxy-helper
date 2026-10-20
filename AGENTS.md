@@ -28,7 +28,7 @@ composer/controller; service managers own supervision.
 - Files are replaced atomically, not as a multi-file transaction.
   One state directory must own each set of writable stores.
 - Keep sensitive files 0600. Never log URLs, credentials, subscription bodies,
-  or raw validator/converter errors during updates.
+  or raw validator errors during updates.
 - Keep managed inputs root-owned. Loopback API binding is not local-user authorization.
 - Keep docs about current behavior and open work. Do not add implementation journals.
 
@@ -41,6 +41,7 @@ ast-grep scan --config "$HOME/sgconfig.yml" --no-ignore hidden .
 ```
 
 CI also runs gopls, deadcode, and [native lifecycle tests](tests/distros/README.md).
-Optional Go integration checks use absolute `PH_REAL_CORE`, `PH_REAL_MIHOMO`,
-and `PH_REAL_CONVERTER` paths; `PH_REAL_TEMPLATE` supplies a sing-box template.
+Optional Go integration checks exercise native parsing and core validation using
+absolute `PH_REAL_CORE` and `PH_REAL_MIHOMO` paths; `PH_REAL_TEMPLATE` supplies
+a sing-box template.
 Do not treat subprocess doubles as real-core or host-routing verification.

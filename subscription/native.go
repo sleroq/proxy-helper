@@ -16,7 +16,7 @@ import (
 	"github.com/sleroq/ph/proxy"
 )
 
-// Native fetches and parses supported URI subscriptions without an external converter.
+// Native fetches and parses supported URI subscriptions.
 type Native struct{ Client *http.Client }
 
 func (n Native) Fetch(ctx context.Context, source Source) ([]proxy.Node, error) {

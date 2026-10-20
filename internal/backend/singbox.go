@@ -10,10 +10,9 @@ import (
 	"github.com/sleroq/ph/internal/app"
 	"github.com/sleroq/ph/proxy"
 	"github.com/sleroq/ph/singbox"
-	"github.com/sleroq/ph/subscription"
 )
 
-type singBox struct{ binary, converter string }
+type singBox struct{ binary string }
 
 func (b singBox) Name() string { return "sing-box" }
 
@@ -24,13 +23,6 @@ func (b singBox) Template() json.RawMessage {
 		"route":{"final":"proxy"},
 		"experimental":{"clash_api":{"external_controller":"127.0.0.1:9090"}}
 	}`)
-}
-
-func (b singBox) Fetch(ctx context.Context, source subscription.Source) ([]proxy.Node, error) {
-	if b.converter != "" {
-		return (subscription.Converter{Binary: b.converter}).Fetch(ctx, source)
-	}
-	return (subscription.Native{}).Fetch(ctx, source)
 }
 
 func (b singBox) Compose(template json.RawMessage, groups []proxy.Group, extra []proxy.Node, opts app.Options) (json.RawMessage, error) {

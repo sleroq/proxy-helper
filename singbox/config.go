@@ -148,7 +148,7 @@ func composeOutbounds(groups []Group, extra []Outbound, options Options) (outbou
 	if options.Bypass {
 		choices = []string{"direct"}
 	}
-	if len(set.automatic) > 0 && !options.Bypass {
+	if len(set.automatic) > 0 {
 		set.nodes = append(set.nodes, urltest("auto", set.automatic, options))
 		choices = append([]string{"auto"}, choices...)
 	}

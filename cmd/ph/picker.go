@@ -21,12 +21,12 @@ type pickerRow struct{ tag, source, server string }
 type latencyMsg map[string]int
 type pulseMsg struct{}
 type picker struct {
-	rows                                       []pickerRow
-	visible                                    []int
-	now, pin, choice, filter                   string
-	active, searching, probing, color, backend bool
-	cursor, top, width, height, frame          int
-	latency                                    map[string]int
+	rows                               []pickerRow
+	visible                            []int
+	now, pin, choice, filter           string
+	searching, probing, color, backend bool
+	cursor, top, width, height, frame  int
+	latency                            map[string]int
 }
 
 func safeText(s string) string {
@@ -303,14 +303,14 @@ func pickerMetadata(manifest app.Manifest) (map[string]app.NodeInfo, map[string]
 
 func newPicker(selected backend.Selection, manifest app.Manifest, metadata map[string]app.NodeInfo, groups map[string]bool) picker {
 	m := picker{
-		now: selected.Now, pin: manifest.PinnedTag, active: manifest.PinActive,
+		now: selected.Now, pin: manifest.PinnedTag,
 		width: 80, height: 24,
 		color:   os.Getenv("NO_COLOR") == "" && os.Getenv("TERM") != "dumb",
 		probing: slices.Contains(selected.All, "auto"),
 	}
 	if m.pin == "" {
 		m.pin = "none"
-	} else if !m.active {
+	} else if !manifest.PinActive {
 		m.pin += " (inactive)"
 	}
 	for _, tag := range selected.All {

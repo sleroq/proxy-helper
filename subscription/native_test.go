@@ -52,11 +52,11 @@ func testNativeEncoded(t *testing.T, n Native, lines string) {
 
 func TestNativeFetchLimit(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = fmt.Fprint(w, strings.Repeat("x", nativeLimit+1))
+		_, _ = fmt.Fprint(w, strings.Repeat("x", responseLimit+1))
 	}))
 	defer server.Close()
 	_, err := (Native{}).Fetch(context.Background(), Source{ID: "test", URL: server.URL})
-	if !errors.Is(err, errNativeTooLarge) {
+	if !errors.Is(err, errResponseTooLarge) {
 		t.Fatalf("limit: %v", err)
 	}
 }

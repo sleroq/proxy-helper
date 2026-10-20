@@ -567,7 +567,7 @@ func addSubscription(c *subscription.Catalog, args []string) error {
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 		return fmt.Errorf("expected exactly one source JSON object")
 	}
-	return c.Put(source, *store, false)
+	return c.Add(source, *store)
 }
 
 func automatic(c *subscription.Catalog, args []string) error {

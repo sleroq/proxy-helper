@@ -370,10 +370,14 @@ is `github.com/sleroq/ph`; until published, consume the local module using Go's
 ## Failure and security boundaries
 
 Fetch/conversion/composition/core-validation failures leave installed state
-untouched. The updater holds an OS advisory lock and releases it **before**
-restarting; service startup executes only the previously installed config. A failed restart explicitly
-reports that the new configuration has already been installed. No automatic
-rollback is attempted.
+untouched. Ordinary update/apply/mode activation releases the OS advisory lock
+**before** restarting. A failed restart reports that the new configuration has
+already been installed; these operations do not attempt automatic rollback.
+Backend switching instead holds the lock across restart and readiness checks,
+and attempts to restore the previous configuration and restart the old core on
+failure. The selectable Nix profile and native Linux services run only the
+previously installed config at startup; the separate legacy `services.phMihomo`
+profile runs `prepare` before starting its core.
 
 Individual files are atomically replaced, but cache, manifest and config are
 **not a multi-file transaction**; disk failure or interruption between replacements

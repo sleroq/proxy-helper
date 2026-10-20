@@ -187,30 +187,11 @@ func (c *Catalog) location(id string) (int, int, error) {
 	return 0, 0, fmt.Errorf("unknown subscription %s", id)
 }
 
-// Put adds or replaces a complete source in its owning writable store.
-func (c *Catalog) Put(source Source, storeName string, replace bool) error {
+// Add creates a source in a writable store, rejecting existing IDs.
+func (c *Catalog) Add(source Source, storeName string) error {
 	if err := source.Validate(); err != nil {
 		return err
 	}
-	if replace {
-		return c.replace(source)
-	}
-	return c.add(source, storeName)
-}
-
-func (c *Catalog) replace(source Source) error {
-	i, j, err := c.location(source.ID)
-	if err != nil {
-		return err
-	}
-	if !c.Stores[i].Writable {
-		return fmt.Errorf("subscription %s belongs to a read-only store", source.ID)
-	}
-	c.Documents[i].Subscriptions[j] = source
-	return files.Write(c.Stores[i].Path, c.Documents[i], 0600)
-}
-
-func (c *Catalog) add(source Source, storeName string) error {
 	if _, _, err := c.location(source.ID); err == nil {
 		return fmt.Errorf("duplicate subscription ID %s", source.ID)
 	}

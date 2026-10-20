@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -20,36 +19,17 @@ import (
 // Native fetches and parses supported URI subscriptions without an external converter.
 type Native struct{ Client *http.Client }
 
-const nativeLimit = 8 << 20
-
-var errNativeTooLarge = errors.New("subscription response too large")
-
 func (n Native) Fetch(ctx context.Context, source Source) ([]proxy.Node, error) {
-	address, err := sourceAddress(source)
+	client := http.Client{Timeout: 60 * time.Second}
+	if n.Client != nil {
+		client = *n.Client
+	}
+	client.CheckRedirect = nativeRedirect(client.CheckRedirect)
+	response, err := fetchResponse(ctx, source, &client)
 	if err != nil {
 		return nil, err
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
-	if err != nil {
-		return nil, fmt.Errorf("source %s: invalid request", source.ID)
-	}
-	client := n.Client
-	if client == nil {
-		client = &http.Client{Timeout: 60 * time.Second}
-	}
-	copyClient := *client
-	copyClient.CheckRedirect = nativeRedirect(client.CheckRedirect)
-	response, err := copyClient.Do(request)
-	if err != nil {
-		return nil, fmt.Errorf("source %s: fetch failed", source.ID)
-	}
 	defer func() { _ = response.Body.Close() }()
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, fmt.Errorf("source %s: HTTP %d", source.ID, response.StatusCode)
-	}
-	if response.ContentLength > nativeLimit {
-		return nil, fmt.Errorf("source %s: %w", source.ID, errNativeTooLarge)
-	}
 	return n.Parse(response.Body, source)
 }
 
@@ -83,12 +63,12 @@ func nativeField(node proxy.Node, key string, value any) {
 }
 
 func (Native) Parse(body io.Reader, source Source) ([]proxy.Node, error) {
-	data, err := io.ReadAll(io.LimitReader(body, nativeLimit+1))
+	data, err := io.ReadAll(io.LimitReader(body, responseLimit+1))
 	if err != nil {
 		return nil, fmt.Errorf("source %s: cannot read response", source.ID)
 	}
-	if len(data) > nativeLimit {
-		return nil, fmt.Errorf("source %s: %w", source.ID, errNativeTooLarge)
+	if len(data) > responseLimit {
+		return nil, fmt.Errorf("source %s: %w", source.ID, errResponseTooLarge)
 	}
 
 	text := strings.TrimSpace(string(data))

@@ -5,6 +5,8 @@ set -eu
     echo "usage: $0 OUTPUT_DIR" >&2
     exit 2
 }
+# shellcheck source=scripts/core-versions.sh
+. "$(dirname -- "$0")/core-versions.sh"
 mkdir -p "$1"
 output=$(CDPATH='' cd -- "$1" && pwd)
 tmp=$(mktemp -d)
@@ -13,11 +15,11 @@ for core in sing-box mihomo; do
     case "$core" in
         sing-box)
             repo=SagerNet/sing-box
-            version=1.14.3
+            version=$singbox_version
             ;;
         mihomo)
             repo=MetaCubeX/mihomo
-            version=1.19.32
+            version=$mihomo_version
             ;;
     esac
     name=$core-$version

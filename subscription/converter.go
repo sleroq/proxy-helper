@@ -5,12 +5,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
-	"time"
 
 	"github.com/sleroq/ph/internal/files"
 	"github.com/sleroq/ph/proxy"
@@ -24,46 +21,12 @@ type Converter struct {
 }
 
 func (c Converter) Fetch(ctx context.Context, source Source) ([]proxy.Node, error) {
-	address, err := sourceAddress(source)
+	response, err := fetchResponse(ctx, source, c.Client)
 	if err != nil {
 		return nil, err
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
-	if err != nil {
-		return nil, fmt.Errorf("source %s: invalid request", source.ID)
-	}
-	client := c.Client
-	if client == nil {
-		client = &http.Client{Timeout: 60 * time.Second}
-	}
-	response, err := client.Do(request)
-	if err != nil {
-		return nil, fmt.Errorf("source %s: fetch failed", source.ID)
-	}
 	defer func() { _ = response.Body.Close() }()
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, fmt.Errorf("source %s: HTTP %d", source.ID, response.StatusCode)
-	}
-	if response.ContentLength > 8<<20 {
-		return nil, fmt.Errorf("source %s: subscription response too large", source.ID)
-	}
 	return c.Parse(ctx, response.Body, source)
-}
-
-func sourceAddress(source Source) (string, error) {
-	address := source.URL
-	if source.URLFile != "" {
-		data, err := os.ReadFile(source.URLFile)
-		if err != nil {
-			return "", fmt.Errorf("source %s: cannot read URL file", source.ID)
-		}
-		address = strings.TrimRight(string(data), "\r\n")
-	}
-	parsed, err := url.Parse(address)
-	if err != nil || parsed.Host == "" || (parsed.Scheme != "https" && parsed.Scheme != "http") || strings.ContainsAny(address, "\r\n") {
-		return "", fmt.Errorf("source %s: invalid HTTP subscription URL", source.ID)
-	}
-	return address, nil
 }
 
 // Parse converts a subscription body from any reader into native outbounds.
@@ -122,9 +85,9 @@ func saveResponse(input string, body io.Reader, id string) error {
 	if err != nil {
 		return err
 	}
-	size, copyErr := io.Copy(file, io.LimitReader(body, (8<<20)+1))
+	size, copyErr := io.Copy(file, io.LimitReader(body, responseLimit+1))
 	closeErr := file.Close()
-	if size > 8<<20 {
+	if size > responseLimit {
 		return fmt.Errorf("source %s: subscription response too large", id)
 	}
 	if copyErr != nil || closeErr != nil {

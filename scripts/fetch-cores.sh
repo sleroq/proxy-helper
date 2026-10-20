@@ -7,8 +7,8 @@ if [ "$#" -ne 2 ]; then
 fi
 arch=$1
 output=$2
-singbox_version=1.14.3
-mihomo_version=1.19.32
+# shellcheck source=scripts/core-versions.sh
+. "$(dirname -- "$0")/core-versions.sh"
 case "$arch" in
     amd64)
         singbox_hash=e2bdf179c15a3652955dc44867e33ca0965c9c9b91b34267dcc5a5d639a5feee

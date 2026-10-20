@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -500,6 +501,14 @@ func (f *fixture) workflowSymlink(t *testing.T) {
 	}
 	source, _ := json.Marshal(f.source("three", "/three"))
 	f.run(string(source), true, "subscription", "add")
+	before := f.read("editable.json")
+	duplicate, _ := json.Marshal(f.source("three", "/replacement"))
+	if output := f.run(string(duplicate), false, "subscription", "add"); !strings.Contains(output, "duplicate subscription ID") {
+		t.Fatal(output)
+	}
+	if f.read("editable.json") != before {
+		t.Fatal("duplicate add replaced the existing subscription")
+	}
 	link, err := os.Readlink(filepath.Join(f.dir, "local.json"))
 	if err != nil || link != "editable.json" {
 		t.Fatal("store symlink replaced")
@@ -1080,10 +1089,16 @@ func checkTunnelBypassMode(t *testing.T, f *fixture) {
 }
 
 func checkDirectOnlyConfig(t *testing.T, config string) {
-	var installed struct {
+	t.Helper()
+	var installed, expected struct {
 		Inbounds []struct{ Type string }
 		Route    struct {
-			Final, DefaultDomainResolver string `json:"-"`
+			Final                 string
+			DefaultDomainResolver string `json:"default_domain_resolver"`
+			Rules                 []struct {
+				Action, Outbound string
+				DomainSuffix     []string `json:"domain_suffix"`
+			}
 		}
 		DNS struct {
 			Final   string
@@ -1091,15 +1106,35 @@ func checkDirectOnlyConfig(t *testing.T, config string) {
 			Servers []struct{ Type string }
 		}
 		Outbounds []struct {
-			Tag     string
-			Choices []string `json:"outbounds"`
+			Type, Tag, Default string
+			Choices            []string `json:"outbounds"`
 		}
 	}
 	if err := json.Unmarshal([]byte(config), &installed); err != nil {
 		t.Fatal(err)
 	}
-	if len(installed.Inbounds) != 1 || installed.Inbounds[0].Type != "mixed" || installed.DNS.Final != "ph-local" || len(installed.DNS.Rules) != 0 || len(installed.DNS.Servers) != 1 || installed.DNS.Servers[0].Type != "local" {
-		t.Fatal(config)
+
+	if err := json.Unmarshal([]byte(`{
+  "inbounds": [{"type":"mixed"}],
+  "route": {
+    "final":"direct", "default_domain_resolver":"ph-local",
+    "rules":[
+      {"domain_suffix":["example.net"],"action":"route","outbound":"direct"},
+      {"action":"sniff"},
+      {"action":"hijack-dns"}
+    ]
+  },
+  "dns": {"final":"ph-local","rules":[],"servers":[{"type":"local"}]},
+  "outbounds": [
+    {"type":"selector","tag":"proxy","default":"direct","outbounds":["direct"]},
+    {"type":"direct","tag":"direct"}
+  ]
+}`), &expected); err != nil {
+		t.Fatal(err)
+	}
+
+	if !reflect.DeepEqual(installed, expected) {
+		t.Fatal("bypass must use only direct routing and local DNS while preserving non-routing rules:", config)
 	}
 }
 

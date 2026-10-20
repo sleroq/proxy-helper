@@ -20,14 +20,20 @@ case "$arch" in
         mihomo_arch=arm64
         mihomo_hash=9dd862e28b46ff7d775f169cceebc28deccaa0a9e804237d421cd2571e0caba0
         ;;
-    *) echo "unsupported architecture: $arch" >&2; exit 2 ;;
+    *)
+        echo "unsupported architecture: $arch" >&2
+        exit 2
+        ;;
 esac
 mkdir -p "$output"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 curl -fL --retry 3 -o "$tmp/sing-box.tar.gz" "https://github.com/SagerNet/sing-box/releases/download/v$singbox_version/sing-box-$singbox_version-linux-$arch.tar.gz"
 curl -fL --retry 3 -o "$tmp/mihomo.gz" "https://github.com/MetaCubeX/mihomo/releases/download/v$mihomo_version/mihomo-linux-$mihomo_arch-v$mihomo_version.gz"
-(cd "$tmp"; printf '%s  sing-box.tar.gz\n%s  mihomo.gz\n' "$singbox_hash" "$mihomo_hash" | sha256sum -c -)
+(
+    cd "$tmp"
+    printf '%s  sing-box.tar.gz\n%s  mihomo.gz\n' "$singbox_hash" "$mihomo_hash" | sha256sum -c -
+)
 tar -xzf "$tmp/sing-box.tar.gz" -C "$tmp"
 install -m 0755 "$tmp/sing-box-$singbox_version-linux-$arch/sing-box" "$output/sing-box"
 gzip -dc "$tmp/mihomo.gz" > "$output/mihomo"

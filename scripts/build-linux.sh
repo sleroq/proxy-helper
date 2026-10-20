@@ -8,8 +8,16 @@ fi
 version=$1
 arch=$2
 output=$3
-case "$version" in ''|*[!0-9A-Za-z.+-]*) echo "invalid version" >&2; exit 2 ;; esac
-case "$arch" in amd64|arm64) ;; *) echo "unsupported architecture: $arch" >&2; exit 2 ;; esac
+case "$version" in '' | *[!0-9A-Za-z.+-]*)
+    echo "invalid version" >&2
+    exit 2
+    ;;
+esac
+case "$arch" in amd64 | arm64) ;; *)
+    echo "unsupported architecture: $arch" >&2
+    exit 2
+    ;;
+esac
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 mkdir -p "$output"
 output=$(CDPATH='' cd -- "$output" && pwd)

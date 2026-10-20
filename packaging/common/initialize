@@ -14,14 +14,23 @@ check_root_path() {
 }
 if [ -e /var/lib/ph ] || [ -L /var/lib/ph ]; then
     check_root_path /var/lib/ph
-    [ -d /var/lib/ph ] || { echo 'ph: state path is not a directory' >&2; exit 1; }
+    [ -d /var/lib/ph ] || {
+        echo 'ph: state path is not a directory' >&2
+        exit 1
+    }
 else
     install -d -o root -g root -m 0755 /var/lib/ph
 fi
 if [ -e /var/lib/ph/subscriptions.json ] || [ -L /var/lib/ph/subscriptions.json ]; then
     check_root_path /var/lib/ph/subscriptions.json
-    [ -f /var/lib/ph/subscriptions.json ] || { echo 'ph: registry is not a regular file' >&2; exit 1; }
+    [ -f /var/lib/ph/subscriptions.json ] || {
+        echo 'ph: registry is not a regular file' >&2
+        exit 1
+    }
     chmod 0600 /var/lib/ph/subscriptions.json
 else
-    (umask 077; printf '%s\n' '{"subscriptions":[]}' > /var/lib/ph/subscriptions.json)
+    (
+        umask 077
+        printf '%s\n' '{"subscriptions":[]}' > /var/lib/ph/subscriptions.json
+    )
 fi

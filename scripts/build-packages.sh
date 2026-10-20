@@ -1,13 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
-[[ $# == 5 ]] || { echo 'usage: build-packages.sh DISTRO VERSION ARCH INPUT_DIR OUTPUT_DIR' >&2; exit 2; }
+[[ $# == 5 ]] || {
+    echo 'usage: build-packages.sh DISTRO VERSION ARCH INPUT_DIR OUTPUT_DIR' >&2
+    exit 2
+}
 distro=$1 version=$2 arch=$3
-case "$distro" in debian|arch|void) ;; *) echo 'unsupported distribution' >&2; exit 2;; esac
-[[ $version =~ ^[0-9]+([.][0-9]+)*([a-zA-Z0-9.+~]*)$ ]] || { echo 'invalid version' >&2; exit 2; }
+case "$distro" in debian | arch | void) ;; *)
+    echo 'unsupported distribution' >&2
+    exit 2
+    ;;
+esac
+[[ $version =~ ^[0-9]+([.][0-9]+)*([a-zA-Z0-9.+~]*)$ ]] || {
+    echo 'invalid version' >&2
+    exit 2
+}
 case "$arch" in
-    amd64) native_arch=x86_64;;
-    arm64) native_arch=aarch64;;
-    *) echo 'unsupported architecture' >&2; exit 2;;
+    amd64) native_arch=x86_64 ;;
+    arm64) native_arch=aarch64 ;;
+    *)
+        echo 'unsupported architecture' >&2
+        exit 2
+        ;;
 esac
 [[ $distro != debian ]] || native_arch=$arch
 input=$(cd "$4" && pwd)
@@ -15,10 +28,16 @@ mkdir -p "$5"
 output=$(cd "$5" && pwd)
 source_dir=$(cd "$(dirname "$0")/../packaging" && pwd)
 for binary in ph sing-box mihomo; do
-    [[ -f $input/$binary && -x $input/$binary ]] || { echo "missing executable: $binary" >&2; exit 2; }
+    [[ -f $input/$binary && -x $input/$binary ]] || {
+        echo "missing executable: $binary" >&2
+        exit 2
+    }
 done
 for license in COPYING LICENSE-sing-box LICENSE-mihomo; do
-    [[ -f $input/$license ]] || { echo "missing license: $license" >&2; exit 2; }
+    [[ -f $input/$license ]] || {
+        echo "missing license: $license" >&2
+        exit 2
+    }
 done
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
@@ -51,7 +70,7 @@ fi
 case "$distro" in
     debian)
         mkdir "$root/DEBIAN"
-        cat > "$root/DEBIAN/control" <<META
+        cat > "$root/DEBIAN/control" << META
 Package: ph
 Version: $version
 Architecture: $native_arch
@@ -65,7 +84,7 @@ META
         ;;
     arch)
         install -m 0644 "$source_dir/arch/install" "$root/.INSTALL"
-        cat > "$root/.PKGINFO" <<META
+        cat > "$root/.PKGINFO" << META
 pkgname = ph
 pkgbase = ph
 pkgver = $version-1
@@ -81,8 +100,11 @@ META
         bsdtar --uid 0 --gid 0 --uname root --gname root -cf - -C "$root" .PKGINFO .INSTALL etc usr | zstd -T0 -o "$output/ph-${version}-1-${native_arch}.pkg.tar.zst"
         ;;
     void)
-        (cd "$output"; xbps-create -A "$native_arch" -n "ph-${version}_1" \
-            -s 'Subscription-managed proxy controller with bundled cores' \
-            -D 'ca-certificates>=0 runit>=0 procps-ng>=0' -F '/etc/ph/config.json /etc/ph/sing-box.json /etc/ph/mihomo.json' "$root")
+        (
+            cd "$output"
+            xbps-create -A "$native_arch" -n "ph-${version}_1" \
+                -s 'Subscription-managed proxy controller with bundled cores' \
+                -D 'ca-certificates>=0 runit>=0 procps-ng>=0' -F '/etc/ph/config.json /etc/ph/sing-box.json /etc/ph/mihomo.json' "$root"
+        )
         ;;
 esac

@@ -4,7 +4,7 @@ case "$1" in
     post)
         /usr/lib/ph/initialize
         /usr/lib/ph/log-initialize
-        if [ -d /var/service ] && pgrep -x runsvdir >/dev/null; then
+        if [ -d /var/service ] && pgrep -x runsvdir > /dev/null; then
             for service in ph-proxy ph-proxy-update; do
                 if [ ! -e "/var/service/$service" ]; then
                     ln -s "/etc/sv/$service" "/var/service/$service"

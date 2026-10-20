@@ -77,7 +77,7 @@ let
       api_url = "http://${sub.apiAddress}";
       test_url = sub.testURL;
       test_interval = sub.testInterval;
-      tolerance = sub.tolerance;
+      inherit (sub) tolerance;
       sing_box =
         if builtins.hasAttr "sing-box" cfg.backends then "${cfg.backends."sing-box"}/bin/sing-box" else "";
       converter =

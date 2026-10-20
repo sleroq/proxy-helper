@@ -18,46 +18,50 @@ in
 {
   imports = [ ./common.nix ];
   config = lib.mkIf cfg.enable {
-    systemd.services.ph-proxy = {
-      description = "ph-proxy";
-      wantedBy = [ "multi-user.target" ];
-      after = [ "network-online.target" ];
-      wants = [ "network-online.target" ];
-      serviceConfig = {
-        ExecStart = phModule.runner;
-        Restart = "on-failure";
-        User = "root";
-        Group = "root";
-        StateDirectory = "sing-box";
-        AmbientCapabilities = caps;
-        CapabilityBoundingSet = caps;
-      }
-      // lib.optionalAttrs (cfg.routingMark != 0) {
-        ExecStartPre = pkgs.writeShellScript "ph-routing-rule-start" ''
-          ${pkgs.iproute2}/bin/ip rule del ${rule} 2>/dev/null || true
-          ${pkgs.iproute2}/bin/ip rule add ${rule}
-        '';
-        ExecStopPost = pkgs.writeShellScript "ph-routing-rule-stop" ''
-          ${pkgs.iproute2}/bin/ip rule del ${rule} 2>/dev/null || true
-        '';
+    systemd = {
+      services = {
+        ph-proxy = {
+          description = "ph-proxy";
+          wantedBy = [ "multi-user.target" ];
+          after = [ "network-online.target" ];
+          wants = [ "network-online.target" ];
+          serviceConfig = {
+            ExecStart = phModule.runner;
+            Restart = "on-failure";
+            User = "root";
+            Group = "root";
+            StateDirectory = "sing-box";
+            AmbientCapabilities = caps;
+            CapabilityBoundingSet = caps;
+          }
+          // lib.optionalAttrs (cfg.routingMark != 0) {
+            ExecStartPre = pkgs.writeShellScript "ph-routing-rule-start" ''
+              ${pkgs.iproute2}/bin/ip rule del ${rule} 2>/dev/null || true
+              ${pkgs.iproute2}/bin/ip rule add ${rule}
+            '';
+            ExecStopPost = pkgs.writeShellScript "ph-routing-rule-stop" ''
+              ${pkgs.iproute2}/bin/ip rule del ${rule} 2>/dev/null || true
+            '';
+          };
+        };
+        ph-proxy-update = lib.mkIf sub.enable {
+          description = "Update ph-proxy subscription";
+          after = [ "network-online.target" ];
+          wants = [ "network-online.target" ];
+          serviceConfig = {
+            Type = "oneshot";
+            User = "root";
+            ExecStart = phModule.update;
+          };
+        };
       };
-    };
-    systemd.services.ph-proxy-update = lib.mkIf sub.enable {
-      description = "Update ph-proxy subscription";
-      after = [ "network-online.target" ];
-      wants = [ "network-online.target" ];
-      serviceConfig = {
-        Type = "oneshot";
-        User = "root";
-        ExecStart = phModule.update;
-      };
-    };
-    systemd.timers.ph-proxy-update = lib.mkIf sub.enable {
-      wantedBy = [ "timers.target" ];
-      timerConfig = {
-        OnBootSec = "5m";
-        OnUnitActiveSec = "${toString sub.updateInterval}s";
-        Unit = "ph-proxy-update.service";
+      timers.ph-proxy-update = lib.mkIf sub.enable {
+        wantedBy = [ "timers.target" ];
+        timerConfig = {
+          OnBootSec = "5m";
+          OnUnitActiveSec = "${toString sub.updateInterval}s";
+          Unit = "ph-proxy-update.service";
+        };
       };
     };
     security.polkit.enable = lib.mkIf (cfg.refreshUser != null && sub.enable) (lib.mkDefault true);

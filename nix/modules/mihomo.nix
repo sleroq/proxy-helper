@@ -22,7 +22,7 @@ let
     subscriptions = map (source: {
       id = source.name;
       url_file = source.urlFile;
-      prefix = source.prefix;
+      inherit (source) prefix;
       auto = source.autoSelect;
       include_tags = source.includeTags;
       exclude_tags = source.excludeTags;
@@ -156,36 +156,40 @@ in
       cfg.package
       ph
     ];
-    systemd.services.ph-mihomo = {
-      description = "mihomo managed by ph";
-      wantedBy = [ "multi-user.target" ];
-      after = [ "network-online.target" ];
-      wants = [ "network-online.target" ];
-      serviceConfig = {
-        ExecStart = runner;
-        Restart = "on-failure";
-        User = "root";
-        StateDirectory = "ph-mihomo";
+    systemd = {
+      services = {
+        ph-mihomo = {
+          description = "mihomo managed by ph";
+          wantedBy = [ "multi-user.target" ];
+          after = [ "network-online.target" ];
+          wants = [ "network-online.target" ];
+          serviceConfig = {
+            ExecStart = runner;
+            Restart = "on-failure";
+            User = "root";
+            StateDirectory = "ph-mihomo";
+          };
+        };
+        ph-mihomo-update = {
+          description = "Update ph mihomo subscriptions";
+          after = [ "network-online.target" ];
+          wants = [ "network-online.target" ];
+          serviceConfig = {
+            Type = "oneshot";
+            User = "root";
+            ExecStart = pkgs.writeShellScript "ph-mihomo-update" ''
+              exec ${ph}/bin/ph-mihomo update
+            '';
+          };
+        };
       };
-    };
-    systemd.services.ph-mihomo-update = {
-      description = "Update ph mihomo subscriptions";
-      after = [ "network-online.target" ];
-      wants = [ "network-online.target" ];
-      serviceConfig = {
-        Type = "oneshot";
-        User = "root";
-        ExecStart = pkgs.writeShellScript "ph-mihomo-update" ''
-          exec ${ph}/bin/ph-mihomo update
-        '';
-      };
-    };
-    systemd.timers.ph-mihomo-update = {
-      wantedBy = [ "timers.target" ];
-      timerConfig = {
-        OnBootSec = "5m";
-        OnUnitActiveSec = "${toString cfg.updateInterval}s";
-        Unit = "ph-mihomo-update.service";
+      timers.ph-mihomo-update = {
+        wantedBy = [ "timers.target" ];
+        timerConfig = {
+          OnBootSec = "5m";
+          OnUnitActiveSec = "${toString cfg.updateInterval}s";
+          Unit = "ph-mihomo-update.service";
+        };
       };
     };
   };

@@ -35,6 +35,16 @@ jobs:
           golangci-lint run
           deadcode -test ./...
 
+  nixos:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - name: Allow the NixOS test driver to use KVM
+        run: sudo chmod a+rw /dev/kvm
+      - name: Test NixOS modules, subscriptions, TUN and DNS routing
+        run: nix build -L .#checks.x86_64-linux.nixos-proxy
+
   distro:
     strategy:
       fail-fast: false
@@ -105,7 +115,7 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [go, distro, sources]
+    needs: [go, nixos, distro, sources]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

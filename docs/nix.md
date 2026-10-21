@@ -59,3 +59,7 @@ The service cannot serve traffic before a validated config is installed.
 It uses `/var/lib/ph-mihomo` and a `ph-mihomo` wrapper. It does not support
 client switching, TUN, or delegated refresh. Do not enable it alongside
 `services.ph` on the same listener ports.
+
+For real-core subscription, service, TUN, and DNS test coverage, see
+[the NixOS VM tests](../tests/nixos/README.md). Darwin service/routing is not
+covered by that suite.

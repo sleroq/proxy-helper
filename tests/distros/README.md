@@ -26,8 +26,18 @@ packages are removed, with logs printed on failure.
 The suite runs real systemd or runit, local HTTP subscription fixtures, and a
 real Shadowsocks server. It checks both cores' proxy traffic, selection/pins,
 apply/update, scheduled updates, failed-update rollback, unprivileged access
-boundaries, upgrades preserving state/configuration, and removal. It uses no
-provider credentials or host TUN routing.
+boundaries, upgrades preserving state/configuration, and removal. It also tests
+sing-box TUN routing and UDP/TCP DNS hijacking against a Shadowsocks server,
+HTTP fixture, and dnsmasq in a network namespace. Direct access must fail before
+and after the client runs; stopping the remote server must break HTTP and DNS
+while the managed client stays running, and restarting it must restore traffic.
+The original templates, subscriptions, pin, and resolver contents are restored
+before upgrade checks. Managed mihomo remains mixed-proxy-only (TUN is unsupported).
+
+Images include iproute2, dnsmasq, and dig. Privileged containers need network
+namespace and TUN support (`/dev/net/tun`). Only test destinations are captured;
+subscription and server control traffic stay outside TUN. The suite uses no
+provider credentials and never changes host TUN routing.
 
 CI runs Debian and Void on amd64/arm64 and Arch on amd64, plus uncached
 `go test -race -count=1 ./...` on Linux/macOS and Go analysis on Linux. Successful

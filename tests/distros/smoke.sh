@@ -158,6 +158,8 @@ expect_failure ph update
 sha256sum -c /tmp/config.sha
 wait_proxy
 rm /tmp/fail-source
+sh /project/tests/distros/routing.sh "$distro"
+wait_proxy
 # Snapshot all persistent user state except derived health and manifest timestamps.
 python3 - << 'PY'
 import hashlib, json

@@ -55,6 +55,18 @@
           default = ph;
         }
       );
+      checks =
+        nixpkgs.lib.genAttrs
+          [
+            "x86_64-linux"
+            "aarch64-linux"
+          ]
+          (system: {
+            nixos-proxy = import ./tests/nixos/proxy.nix {
+              inherit self;
+              pkgs = nixpkgs.legacyPackages.${system};
+            };
+          });
       devShells = eachSystem (system: {
         default = nixpkgs.legacyPackages.${system}.mkShell {
           packages = with nixpkgs.legacyPackages.${system}; [

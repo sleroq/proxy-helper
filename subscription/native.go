@@ -1,6 +1,7 @@
 package subscription
 
 import (
+	"cmp"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -131,7 +132,7 @@ func nativeParseLines(text string, source Source, excluded *regexp.Regexp) ([]pr
 
 func nativeExcluded(node proxy.Node, name string, protocols map[string]bool, excluded *regexp.Regexp) bool {
 	kind := node.String("type")
-	if protocols[kind] || (kind == "shadowsocks" && protocols["ss"]) {
+	if protocols[kind] || (kind == "shadowsocks" && protocols["ss"]) || (kind == "hysteria2" && protocols["hy2"]) {
 		return true
 	}
 	return excluded != nil && excluded.MatchString(name)
@@ -158,7 +159,11 @@ func nativeLine(line string) (proxy.Node, string, error) {
 		return nil, "", err
 	}
 	kind := strings.ToLower(u.Scheme)
-	if kind != "ss" && kind != "trojan" && kind != "vless" && kind != "vmess" {
+	switch kind {
+	case "hy2":
+		kind = "hysteria2"
+	case "ss", "trojan", "vless", "vmess", "hysteria2":
+	default:
 		return nil, "", fmt.Errorf("unsupported")
 	}
 
@@ -169,19 +174,20 @@ func nativeLine(line string) (proxy.Node, string, error) {
 	} else {
 		nativeField(node, "type", kind)
 	}
-	if kind == "vmess" {
+	switch kind {
+	case "vmess":
 		name, err = nativeVMess(node, line, name)
-	} else {
+	case "hysteria2":
+		name = u.Fragment
+		err = nativeHysteria2(node, u)
+	default:
 		err = nativeURI(node, u, kind)
 	}
 	if err != nil {
 		return nil, "", err
 	}
 
-	if name == "" {
-		name = node.String("server")
-	}
-	return node, name, nil
+	return node, cmp.Or(name, node.String("server")), nil
 }
 
 func nativeExpandSS(line string) string {

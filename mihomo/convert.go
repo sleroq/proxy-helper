@@ -21,6 +21,13 @@ func convert(node proxy.Node) (map[string]json.RawMessage, error) {
 		return nil, err
 	}
 
+	if kind == "hysteria2" {
+		if err := convertHysteria2(node, out); err != nil {
+			return nil, fmt.Errorf("node %q: %w", tag, err)
+		}
+		return out, nil
+	}
+
 	if raw, ok := node["tls"]; ok {
 		if err := convertTLS(raw, out); err != nil {
 			return nil, fmt.Errorf("node %q: %w", tag, err)
@@ -91,7 +98,7 @@ func protocolFields(kind string) (map[string]string, error) {
 	case "shadowsocks", "ss":
 		fields["method"] = "cipher"
 		fields["password"] = "password"
-	case "trojan":
+	case "trojan", "hysteria2":
 		fields["password"] = "password"
 	case "vmess":
 		fields["uuid"] = "uuid"
@@ -104,6 +111,75 @@ func protocolFields(kind string) (map[string]string, error) {
 		return nil, fmt.Errorf("unsupported protocol")
 	}
 	return fields, nil
+}
+
+func convertHysteria2(node proxy.Node, out map[string]json.RawMessage) error {
+	for key, value := range node {
+		switch key {
+		case "tag", "type", "server", "server_port", "password":
+		case "tls":
+			if err := convertHysteria2TLS(value, out); err != nil {
+				return err
+			}
+		case "obfs":
+			if err := convertHysteria2Obfs(value, out); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("unsupported field %s", key)
+		}
+	}
+	if strings.TrimSpace(node.String("tag")) == "" {
+		return fmt.Errorf("empty tag")
+	}
+	return nil
+}
+
+func convertHysteria2TLS(raw json.RawMessage, out map[string]json.RawMessage) error {
+	var tls map[string]json.RawMessage
+	if json.Unmarshal(raw, &tls) != nil || tls == nil {
+		return fmt.Errorf("invalid TLS")
+	}
+	var enabled bool
+	if json.Unmarshal(tls["enabled"], &enabled) != nil || !enabled {
+		return fmt.Errorf("hysteria2 requires enabled TLS")
+	}
+	fields := map[string]string{
+		"server_name": "sni", "alpn": "alpn", "insecure": "skip-cert-verify",
+	}
+	for key, value := range tls {
+		if key == "enabled" {
+			continue
+		}
+		target, ok := fields[key]
+		if !ok {
+			return fmt.Errorf("unsupported TLS option %s", key)
+		}
+		out[target] = value
+	}
+	return nil
+}
+
+func convertHysteria2Obfs(raw json.RawMessage, out map[string]json.RawMessage) error {
+	var obfs map[string]json.RawMessage
+	if json.Unmarshal(raw, &obfs) != nil || obfs == nil {
+		return fmt.Errorf("invalid obfs")
+	}
+	var typ, password string
+	if json.Unmarshal(obfs["type"], &typ) != nil || typ != "salamander" {
+		return fmt.Errorf("unsupported obfs type")
+	}
+	if json.Unmarshal(obfs["password"], &password) != nil || password == "" {
+		return fmt.Errorf("invalid obfs password")
+	}
+	for key := range obfs {
+		if key != "type" && key != "password" {
+			return fmt.Errorf("unsupported obfs option %s", key)
+		}
+	}
+	out["obfs"] = obfs["type"]
+	out["obfs-password"] = obfs["password"]
+	return nil
 }
 
 func convertTLS(raw json.RawMessage, out map[string]json.RawMessage) error {

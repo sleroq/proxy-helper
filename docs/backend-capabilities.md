@@ -13,9 +13,15 @@ filters, automatic groups, live selection, and persistent pins.
 
 ## Subscription formats
 
-- Plain or base64 URI lists: Shadowsocks, Trojan, VLESS, and base64-JSON VMess.
+- Plain or base64 URI lists: Shadowsocks, Trojan, VLESS, base64-JSON VMess,
+  and Hysteria 2 (`hysteria2://` or `hy2://`).
 - Basic TCP, WebSocket, gRPC, TLS, and Reality parameters.
-- No Clash YAML, native mihomo providers, SSR, Hysteria, or TUIC imports.
+- Hysteria 2 supports password and `username:password` authentication, a single
+  server port (default 443), TLS SNI, ALPN, `insecure=0/1`, and Salamander
+  obfuscation (`obfs=salamander` and `obfs-password`). Both protocol names work
+  in protocol exclusions. Other Hysteria 2 query options, port hopping, Gecko
+  obfuscation, certificate pins, ECH, and realm links are not imported.
+- No Clash YAML, native mihomo providers, SSR, Hysteria 1, or TUIC imports.
 - Malformed or unsupported entries are skipped. An unusable source keeps its cache.
 - Mihomo rejects node options it cannot translate. Core support alone does not
   imply ph support.

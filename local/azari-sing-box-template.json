@@ -1,0 +1,181 @@
+{
+  "certificate": {
+    "store": "system"
+  },
+  "log": {
+    "level": "info"
+  },
+  "dns": {
+    "cache_capacity": 65536,
+    "rules": [
+      {
+        "action": "predefined",
+        "answer": [
+          "*. IN A 127.0.0.1"
+        ],
+        "domain": "localhost",
+        "query_type": "A",
+        "rcode": "NOERROR"
+      },
+      {
+        "action": "predefined",
+        "domain": "localhost",
+        "query_type": "AAAA",
+        "rcode": "NXDOMAIN"
+      },
+      {
+        "action": "route",
+        "server": "dns-remote"
+      }
+    ],
+    "servers": [
+      {
+        "detour": "proxy",
+        "domain_resolver": "dns-local",
+        "path": "/dns-query",
+        "server": "8.8.8.8",
+        "tag": "dns-remote",
+        "type": "https"
+      },
+      {
+        "bind_interface": "tailscale0",
+        "domain_resolver": "dns-local",
+        "tag": "dns-direct",
+        "type": "local"
+      },
+      {
+        "tag": "dns-local",
+        "type": "local"
+      }
+    ]
+  },
+  "inbounds": [
+    {
+      "listen": "127.0.0.1",
+      "listen_port": 5533,
+      "tag": "dns-in",
+      "type": "direct"
+    },
+    {
+      "listen": "127.0.0.1",
+      "listen_port": 2080,
+      "tag": "mixed-in",
+      "type": "mixed"
+    },
+    {
+      "listen": "127.0.0.1",
+      "listen_port": 1080,
+      "tag": "ph-mixed-in",
+      "type": "mixed"
+    },
+    {
+      "address": [
+        "172.19.0.1/24"
+      ],
+      "auto_redirect": true,
+      "auto_route": true,
+      "interface_name": "throne-tun",
+      "mtu": 1500,
+      "route_exclude_address": [
+        "127.0.0.0/8",
+        "255.255.255.255/32"
+      ],
+      "route_exclude_address_set": [
+        "throne-private-ranges"
+      ],
+      "stack": "system",
+      "strict_route": false,
+      "tag": "tun-in",
+      "type": "tun"
+    }
+  ],
+  "route": {
+    "auto_detect_interface": true,
+    "default_domain_resolver": {
+      "server": "dns-direct",
+      "strategy": ""
+    },
+    "final": "proxy",
+    "find_process": true,
+    "rule_set": [
+      {
+        "rules": [
+          {
+            "ip_cidr": [
+              "10.0.0.0/8",
+              "172.16.0.0/12",
+              "192.168.0.0/16",
+              "169.254.0.0/16",
+              "224.0.0.0/4",
+              "fc00::/7",
+              "fe80::/10",
+              "ff00::/8"
+            ]
+          }
+        ],
+        "tag": "throne-private-ranges",
+        "type": "inline"
+      }
+    ],
+    "rules": [
+      {
+        "action": "sniff"
+      },
+      {
+        "action": "hijack-dns",
+        "protocol": "dns"
+      },
+      {
+        "action": "reject",
+        "inbound": "dns-in"
+      },
+      {
+        "action": "hijack-dns",
+        "protocol": "dns"
+      },
+      {
+        "process_path": [
+          "/app/bin/sober"
+        ],
+        "action": "route",
+        "outbound": "proxy"
+      },
+      {
+        "protocol": "bittorrent",
+        "action": "route",
+        "outbound": "direct"
+      },
+      {
+        "process_name": [
+          "steam",
+          "steamwebhelper"
+        ],
+        "action": "route",
+        "outbound": "direct"
+      },
+      {
+        "domain_suffix": [
+          "ru",
+          "xn--p1ai",
+          "local",
+          "nelocal",
+          "steampowered.com",
+          "steamcommunity.com",
+          "steamstatic.com",
+          "steamcontent.com",
+          "steamserver.net",
+          "steamusercontent.com",
+          "steam-chat.com",
+          "valvesoftware.com"
+        ],
+        "action": "route",
+        "outbound": "direct"
+      }
+    ]
+  },
+  "experimental": {
+    "clash_api": {
+      "external_controller": "127.0.0.1:9090"
+    }
+  }
+}

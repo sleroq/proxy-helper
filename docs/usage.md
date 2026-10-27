@@ -114,6 +114,28 @@ Switching needs this restart command and a working API.
   `tunnel off|on` removes or restores the template's TUN inbound.
   Both persist and require a restart command. Neither changes firewall policy.
 
+## Device-bound subscriptions
+
+Some providers require an `x-hwid` device ID and otherwise return a dummy node.
+ph sends a default ID derived from the hostname (SHA-256), stable across updates
+and backend switches. No separate file or subscription option is required.
+`ph init` writes the default into the main config; existing configs that omit
+`hwid` use the hostname-derived default without rewriting the config.
+
+To reuse a device ID registered with your provider, set `hwid` in the main config:
+
+```json
+{
+  "hwid": "my-existing-device-id"
+}
+```
+
+The ID is not a secret. It must contain 10–64 letters, digits, `=` or `-`.
+Changing it can register a new device and consume a provider device slot. For
+configs without an explicit ID, changing the hostname also changes the default.
+ph reports device-limit failures and does not forward the ID across origins on
+redirects.
+
 ## Security
 
 - Keep stores, caches, generated configs, and URL files private (0600).

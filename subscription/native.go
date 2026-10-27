@@ -17,7 +17,10 @@ import (
 )
 
 // Native fetches and parses supported URI subscriptions.
-type Native struct{ Client *http.Client }
+type Native struct {
+	Client *http.Client
+	HWID   string
+}
 
 func (n Native) Fetch(ctx context.Context, source Source) ([]proxy.Node, error) {
 	client := http.Client{Timeout: 60 * time.Second}
@@ -25,7 +28,7 @@ func (n Native) Fetch(ctx context.Context, source Source) ([]proxy.Node, error) 
 		client = *n.Client
 	}
 	client.CheckRedirect = nativeRedirect(client.CheckRedirect)
-	response, err := fetchResponse(ctx, source, &client)
+	response, err := fetchResponse(ctx, source, &client, n.HWID)
 	if err != nil {
 		return nil, err
 	}
@@ -37,6 +40,9 @@ func nativeRedirect(prior func(*http.Request, []*http.Request) error) func(*http
 	return func(req *http.Request, via []*http.Request) error {
 		if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
 			return fmt.Errorf("invalid redirect scheme")
+		}
+		if len(via) > 0 && (req.URL.Scheme != via[0].URL.Scheme || req.URL.Host != via[0].URL.Host) {
+			req.Header.Del("X-Hwid")
 		}
 		if prior != nil {
 			return prior(req, via)

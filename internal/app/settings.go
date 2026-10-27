@@ -2,6 +2,7 @@
 package app
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -29,6 +30,7 @@ type Settings struct {
 	RestartCommand      []string                   `json:"restart_command,omitempty"`
 	Stores              []subscription.Store       `json:"stores"`
 	OverridesFile       string                     `json:"overrides_file"`
+	HWID                string                     `json:"hwid"`
 	ExcludeProtocols    string                     `json:"exclude_protocols"`
 	ExcludeNodeNames    string                     `json:"exclude_node_names"`
 }
@@ -119,6 +121,13 @@ func LoadSettings(path string) (Settings, error) {
 		return s, err
 	}
 
+	if s.HWID == "" {
+		hwid, err := defaultHWID()
+		if err != nil {
+			return s, err
+		}
+		s.HWID = hwid
+	}
 	if err := s.resolvePaths(path); err != nil {
 		return s, err
 	}
@@ -126,6 +135,14 @@ func LoadSettings(path string) (Settings, error) {
 		return s, fmt.Errorf("state_dir and template_file are required")
 	}
 	return s, nil
+}
+
+func defaultHWID() (string, error) {
+	hostname, err := os.Hostname()
+	if err != nil {
+		return "", fmt.Errorf("derive default hwid: %w", err)
+	}
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(hostname))), nil
 }
 
 func (s *Settings) resolvePaths(path string) error {
@@ -172,13 +189,17 @@ func Init(path, name string, template json.RawMessage) error {
 		return err
 	}
 
+	hwid, err := defaultHWID()
+	if err != nil {
+		return err
+	}
 	base := filepath.Dir(path)
 	s := Settings{
 		TemplateFile: "template.json", StateDir: "state", APIURL: "http://127.0.0.1:9090",
 		TestURL: "https://www.gstatic.com/generate_204", TestInterval: "5m", Tolerance: 50,
 		SingBox: "sing-box", Mihomo: "mihomo", Backend: name, ExcludeProtocols: "ssr",
 		Stores:        []subscription.Store{{Name: "local", Path: "subscriptions.json", Writable: true}},
-		OverridesFile: "overrides.json",
+		OverridesFile: "overrides.json", HWID: hwid,
 	}
 
 	if _, err := os.Stat(filepath.Join(base, "template.json")); err == nil {

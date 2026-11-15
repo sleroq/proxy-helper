@@ -11,14 +11,14 @@ output=$2
 . "$(dirname -- "$0")/core-versions.sh"
 case "$arch" in
     amd64)
-        singbox_hash=e2bdf179c15a3652955dc44867e33ca0965c9c9b91b34267dcc5a5d639a5feee
+        singbox_hash=699a1b510aa4396b2176d32d1181920399ebf1e267835da6f3b598d0f7c24968
         mihomo_arch=amd64-v1
-        mihomo_hash=306f81e723e60ce6b828899a6fe83e1d00e9ecefb2dc8d4d849312a5bc00efdc
+        mihomo_hash=0c07340a01408d033dda4088ea2a4c1e4d82aeed7b2f84f7c046e93b6ff3290c
         ;;
     arm64)
-        singbox_hash=29dae24d76bea3bc62d07dd3e60cfc12003de7debbd6b768df9be9c68360174e
+        singbox_hash=436441f76ee2f7fe21b5b2d426d3cb261a480455a704865789ad533e4273ec26
         mihomo_arch=arm64
-        mihomo_hash=9dd862e28b46ff7d775f169cceebc28deccaa0a9e804237d421cd2571e0caba0
+        mihomo_hash=daaf78a6240a282cdfd75bcbf98fe321f6bd52765cc29e79f344191198f0b50f
         ;;
     *)
         echo "unsupported architecture: $arch" >&2

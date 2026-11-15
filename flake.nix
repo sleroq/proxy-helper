@@ -17,7 +17,7 @@
           pname = "ph";
           version = "0.1.0";
           src = self;
-          vendorHash = "sha256-m8p79jpffBdH81rabn6HFGFINeCqegeYVpC8JX6Dwvg=";
+          vendorHash = "sha256-848WVW8O76cId8TW10Keu4x1V/iWIJxI01rCtON982M=";
           subPackages = [ "cmd/ph" ];
           checkPhase = ''
             runHook preCheck

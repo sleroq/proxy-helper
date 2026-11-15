@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 [ "$#" -eq 5 ] || {
-    echo 'usage: tests/distros/build.sh debian|arch|void VERSION amd64|arm64 INPUT_DIR OUTPUT_DIR' >&2
+    echo 'usage: tests/distros/build.sh debian|fedora|arch|void VERSION amd64|arm64 INPUT_DIR OUTPUT_DIR' >&2
     exit 2
 }
 distro=$1 version=$2 arch=$3
@@ -13,6 +13,7 @@ case "$arch" in amd64 | arm64) ;; *)
 esac
 case "$distro" in
     debian) base=debian:trixie ;;
+    fedora) base=fedora:45 ;;
     arch)
         [ "$arch" = amd64 ] || {
             echo 'official archlinux:base supports amd64 only' >&2

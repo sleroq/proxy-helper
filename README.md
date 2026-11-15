@@ -17,7 +17,7 @@ ph controls proxy cores. It is not a proxy or service supervisor.
 
 ## Get started
 
-- [Native Linux packages](docs/linux.md) — Debian, Arch, and Void.
+- [Native Linux packages](docs/linux.md) — Debian, Fedora, Arch, and Void.
 - [NixOS and nix-darwin](docs/nix.md) — shared modules and scheduled updates.
 - [Standalone setup and daily use](docs/usage.md) — no Nix required.
 - [Client support and limits](docs/backend-capabilities.md).

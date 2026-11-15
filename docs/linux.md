@@ -6,6 +6,7 @@ configuration, and services. The target host needs neither Go nor Nix.
 | Distribution | Package | Architectures | Supervisor |
 | --- | --- | --- | --- |
 | Debian 13+ | `.deb` | amd64, arm64 | systemd |
+| Fedora 45 | `.rpm` | x86_64, aarch64 | systemd |
 | Arch Linux | `.pkg.tar.zst` | x86_64 | systemd |
 | Void Linux (glibc) | `.xbps` | x86_64, aarch64 | runit |
 
@@ -22,6 +23,8 @@ checksum, then install it (substitute the downloaded filename):
 ```sh
 # Debian
 sudo apt install ./ph_VERSION_amd64.deb
+# Fedora (release RPMs are unsigned)
+sudo dnf install --nogpgcheck ./ph-VERSION-1.x86_64.rpm
 # Arch
 sudo pacman -U ./ph-VERSION-1-x86_64.pkg.tar.zst
 # Void
@@ -58,11 +61,11 @@ sudo ph refresh                    # request the native subscription update serv
 `ph update` updates subscriptions, not software. To upgrade software, repeat the
 native package installation (add `-u` on Void). Upgrades retain state and edited
 configuration and restart an active proxy; reconcile package-manager configuration
-files such as `.pacnew` or `.new-*` as needed.
+files such as `.rpmnew`, `.pacnew` or `.new-*` as needed.
 
 ## Services and logs
 
-On Debian and Arch, the update timer runs five minutes after boot and daily,
+On Debian, Fedora and Arch, the update timer runs five minutes after boot and daily,
 catching up missed calendar events:
 
 ```sh
@@ -101,7 +104,7 @@ registries, templates, or caches. `ph init` creates a separate user-owned XDG
 profile for manual use; `--config PATH` selects another profile explicitly.
 
 Removal stops/disables services but retains state and edited configuration.
-Arch saves edited configuration as `.pacsave` files.
+Arch and Fedora save edited configuration as `.pacsave` and `.rpmsave` files respectively.
 Debian `apt purge ph` removes native conffiles, but not `/var/lib/ph` or provider
 secret files. Review backups and delete secrets manually when retiring a host.
 

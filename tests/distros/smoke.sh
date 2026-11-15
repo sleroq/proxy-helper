@@ -9,6 +9,7 @@ expect_failure() { if "$@"; then fail "unexpected success: $*"; fi; }
 install_package() {
     case "$distro" in
         debian) dpkg -i /artifacts/"$1"/*.deb ;;
+        fedora) dnf install -y --nogpgcheck /artifacts/"$1"/*.rpm ;;
         arch) pacman --disable-sandbox -U --noconfirm /artifacts/"$1"/*.pkg.tar.zst ;;
         void)
             if xbps-query ph > /dev/null 2>&1; then
@@ -67,6 +68,11 @@ assert s.st_uid == 0 and stat.S_IMODE(s.st_mode) == 0o600, (sys.argv[1], s)
 PY
 }
 install_package 0.0.1
+if [ "$distro" = fedora ]; then
+    for file in config.json sing-box.json mihomo.json; do
+        rpm -q --qf '[%{FILENAMES} %{FILEFLAGS:fflags}\n]' ph | grep -Fx "/etc/ph/$file cn"
+    done
+fi
 [ "$(ph version)" = 0.0.1 ]
 expect_failure ph refresh fixture
 [ "$(readlink -f "$(command -v ph)")" = /usr/bin/ph ]
@@ -175,6 +181,7 @@ wait_proxy
 [ "$(core_pid)" != "$previous" ] || fail 'upgrade did not restart the active core'
 case "$distro" in
     debian) test "$(dpkg-query -W -f='${Version}' ph)" = 0.0.2 ;;
+    fedora) test "$(rpm -q --qf '%{VERSION}' ph)" = 0.0.2 ;;
     arch) pacman -Q ph | grep -E '^ph 0\.0\.2(-[0-9]+)?$' ;;
     void) xbps-query -p pkgver ph | grep -E '^ph-0\.0\.2_[0-9]+$' ;;
 esac
@@ -189,6 +196,7 @@ ph status
 ph list
 case "$distro" in
     debian) dpkg -r ph ;;
+    fedora) dnf remove -y ph ;;
     arch) pacman --disable-sandbox -R --noconfirm ph ;;
     void) xbps-remove -y ph ;;
 esac
@@ -203,6 +211,7 @@ test -s /var/lib/ph/cache.json
 test -s /var/lib/ph/pin.json
 case "$distro" in
     arch) test -s /etc/ph/config.json.pacsave ;;
+    fedora) test -s /etc/ph/config.json.rpmsave ;;
     *) test -s /etc/ph/config.json ;;
 esac
 case "$distro" in

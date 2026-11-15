@@ -32,6 +32,6 @@ These tests do not claim IPv6, every application protocol, Internet provider
 compatibility, or a firewall kill switch. Managed mihomo rejects TUN; its tests
 use the mixed proxy. No Darwin service or routing test is included.
 
-CI runs this VM test on x86_64 Linux with KVM, in addition to the Debian, Arch,
+CI runs this VM test on x86_64 Linux with KVM, in addition to the Debian, Fedora, Arch,
 and Void lifecycle/routing matrix. The aarch64 NixOS check is available for
 native builders but is not run by CI.

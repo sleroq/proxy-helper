@@ -14,7 +14,7 @@ tests/distros/build.sh debian 1.2.3 amd64 build/input dist
 tests/distros/run.sh debian build/input amd64
 ```
 
-Replace `debian` with `arch` or `void`. Architectures are `amd64` and `arm64`;
+Replace `debian` with `fedora`, `arch`, or `void`. Architectures are `amd64` and `arm64`;
 Arch supports only `amd64`. `run.sh` defaults to the host architecture. Prefer
 native-architecture runners.
 
@@ -39,7 +39,7 @@ namespace and TUN support (`/dev/net/tun`). Only test destinations are captured;
 subscription and server control traffic stay outside TUN. The suite uses no
 provider credentials and never changes host TUN routing.
 
-CI runs Debian and Void on amd64/arm64 and Arch on amd64, plus uncached
+CI runs Debian, Fedora 45, and Void on amd64/arm64 and Arch on amd64, plus uncached
 `go test -race -count=1 ./...` on Linux/macOS and Go analysis on Linux. Successful
 `vVERSION` releases publish packages, checksums, and corresponding bundled-core
 source archives. Core pins are in `scripts/fetch-cores.sh`; source archives are

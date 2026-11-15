@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 [ "$#" -ge 2 ] && [ "$#" -le 3 ] || {
-    echo 'usage: tests/distros/run.sh debian|arch|void INPUT_DIR [ARCH]' >&2
+    echo 'usage: tests/distros/run.sh debian|fedora|arch|void INPUT_DIR [ARCH]' >&2
     exit 2
 }
 distro=$1
@@ -9,7 +9,7 @@ input=$(cd "$2" && pwd)
 arch=${3:-$(uname -m)}
 case "$arch" in x86_64) arch=amd64 ;; aarch64) arch=arm64 ;; esac
 case "$distro" in
-    debian | arch) init=/sbin/init ;;
+    debian | fedora | arch) init=/sbin/init ;;
     void) init=/usr/bin/runsvdir ;;
     *)
         echo "unsupported distro: $distro" >&2

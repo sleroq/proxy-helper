@@ -3,6 +3,7 @@ FROM ${BASE}
 ARG DISTRO
 RUN case "$DISTRO" in \
  debian) apt-get update && apt-get install -y systemd systemd-sysv python3 curl procps iproute2 dnsmasq dnsutils ;; \
+ fedora) dnf install -y rpm-build systemd systemd-udev python3 curl procps-ng iproute dnsmasq bind-utils shadow-utils util-linux && dnf clean all ;; \
  arch) pacman --disable-sandbox -Syu --noconfirm && pacman --disable-sandbox -S --noconfirm libarchive zstd python curl systemd procps-ng iproute2 dnsmasq bind ;; \
  void) xbps-install -Sy && xbps-install -y bash python3 curl runit shadow procps-ng iproute2 dnsmasq bind-utils && mkdir -p /run/runit/runsvdir/current /var/service ;; \
  *) exit 1 ;; esac

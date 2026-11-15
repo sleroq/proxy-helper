@@ -5,7 +5,7 @@ set -euo pipefail
     exit 2
 }
 distro=$1 version=$2 arch=$3
-case "$distro" in debian | arch | void) ;; *)
+case "$distro" in debian | fedora | arch | void) ;; *)
     echo 'unsupported distribution' >&2
     exit 2
     ;;
@@ -81,6 +81,16 @@ META
         for file in $conffiles; do echo "/$file"; done > "$root/DEBIAN/conffiles"
         install -m 0755 "$source_dir/debian/"{postinst,prerm} "$root/DEBIAN/"
         dpkg-deb --root-owner-group --build "$root" "$output/ph_${version}_${native_arch}.deb"
+        ;;
+    fedora)
+        rpmbuild -bb --target "$native_arch" \
+            --define "_topdir $work/rpmbuild" \
+            --define "_rpmdir $output" \
+            --define "_rpmfilename ph-%{VERSION}-%{RELEASE}.%{ARCH}.rpm" \
+            --define "package_version $version" \
+            --define "payload $root" \
+            --define '__os_install_post %{nil}' \
+            "$source_dir/fedora/ph.spec"
         ;;
     arch)
         install -m 0644 "$source_dir/arch/install" "$root/.INSTALL"

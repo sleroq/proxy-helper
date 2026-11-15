@@ -56,6 +56,12 @@ jobs:
           - distro: debian
             arch: arm64
             runner: ubuntu-24.04-arm
+          - distro: fedora
+            arch: amd64
+            runner: ubuntu-24.04
+          - distro: fedora
+            arch: arm64
+            runner: ubuntu-24.04-arm
           - distro: arch
             arch: amd64
             runner: ubuntu-24.04
@@ -93,6 +99,7 @@ jobs:
           retention-days: 1
           path: |
             dist/*.deb
+            dist/*.rpm
             dist/*.pkg.tar.zst
             dist/*.xbps
           if-no-files-found: error
@@ -130,5 +137,5 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           cd dist
-          sha256sum ./*.deb ./*.pkg.tar.zst ./*.xbps ./*-source.tar.gz > SHA256SUMS
+          sha256sum ./*.deb ./*.rpm ./*.pkg.tar.zst ./*.xbps ./*-source.tar.gz > SHA256SUMS
           gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --prerelease="${{ contains(github.ref_name, 'alpha') }}" ./*

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -13,6 +14,38 @@ func TestSubscriptionProxyEnvironment(t *testing.T) {
 		t.Run(variable, func(t *testing.T) {
 			testSubscriptionProxy(t, variable)
 		})
+	}
+}
+
+func TestSubscriptionBypassIgnoresProxyEnvironment(t *testing.T) {
+	for _, key := range []string{"HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "NO_PROXY", "no_proxy", "REQUEST_METHOD"} {
+		t.Setenv(key, "")
+	}
+	f := newFixture(t)
+	requests := make(chan struct{}, 1)
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests <- struct{}{}
+		http.Error(w, "unexpected proxy", http.StatusBadGateway)
+	}))
+	defer proxy.Close()
+	t.Setenv("HTTP_PROXY", proxy.URL)
+	origin, err := url.Parse(f.server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	origin.Host = "localhost.:" + origin.Port()
+	origin.Path = "/one"
+	f.write("declared.json", map[string]any{"subscriptions": []any{
+		map[string]any{"id": "one", "url": origin.String()},
+	}})
+	f.run("", true, "update")
+	if f.count("/one") != 1 {
+		t.Fatal("subscription did not reach origin directly")
+	}
+	select {
+	case <-requests:
+		t.Fatal("subscription reached environment proxy")
+	default:
 	}
 }
 
@@ -45,7 +78,7 @@ func testSubscriptionProxy(t *testing.T, variable string) {
 	f.write("declared.json", map[string]any{"subscriptions": []any{
 		map[string]any{"id": "main", "url": scheme + "://provider.invalid/subscription?token=private"},
 	}})
-	f.run("", !https, "update")
+	f.run("", !https, "--no-subscription-bypass", "update")
 
 	select {
 	case got := <-requests:

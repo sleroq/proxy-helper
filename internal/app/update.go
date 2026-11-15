@@ -23,24 +23,62 @@ type Manager struct {
 // Update attempts every requested source and installs a validated mixed snapshot
 // when at least one fetch succeeds.
 func (m Manager) Update(ctx context.Context, ids []string) error {
+	activated := false
+	for {
+		failed, restartBeforeFetch, err := m.updateAttempt(ctx, ids)
+		if err != nil {
+			return err
+		}
+		if !restartBeforeFetch {
+			return m.finishUpdate(ctx, failed)
+		}
+		if activated {
+			return fmt.Errorf("restart did not preserve subscription bypass configuration")
+		}
+		if err := m.activateSubscriptionBypass(ctx); err != nil {
+			return err
+		}
+		activated = true
+	}
+}
+
+// updateAttempt holds the lock for installation, never for a restart.
+func (m Manager) updateAttempt(ctx context.Context, ids []string) (string, bool, error) {
 	lock, err := m.Settings.Lock()
 	if err != nil {
-		return err
+		return "", false, err
 	}
+	defer func() { _ = lock.Close() }()
 	if err := m.CheckActive(); err != nil {
-		_ = lock.Close()
-		return err
+		return "", false, err
+	}
+	changed, err := m.prepareSubscriptionBypass(ctx, ids)
+	if err != nil || changed {
+		return "", changed, err
 	}
 	failed, err := m.updateLocked(ctx, ids)
-	_ = lock.Close() // prepare runs during restart, so release before activation.
-	if err != nil {
+	return failed, false, err
+}
+
+func (m Manager) activateSubscriptionBypass(ctx context.Context) error {
+	if err := m.CheckActive(); err != nil {
 		return err
 	}
+	if err := m.Restart(ctx); err != nil {
+		return err
+	}
+	if err := waitBackend(ctx, m.Backend, m.Settings.APIURL); err != nil {
+		return fmt.Errorf("subscription bypass activation: %w", err)
+	}
+	return m.clearSubscriptionBypassPending()
+}
+
+func (m Manager) finishUpdate(ctx context.Context, failed string) error {
 	if err := m.CheckActive(); err != nil {
 		return err
 	}
 	restartErr := m.Restart(ctx)
-	if len(failed) > 0 {
+	if failed != "" {
 		if restartErr != nil {
 			return fmt.Errorf("%s; %w", failed, restartErr)
 		}
@@ -110,7 +148,7 @@ func (m Manager) fetchSources(ctx context.Context, sources []subscription.Source
 		if source.ExcludeNodeNames == "" {
 			source.ExcludeNodeNames = s.ExcludeNodeNames
 		}
-		nodes, err := (subscription.Native{HWID: s.HWID}).Fetch(ctx, source)
+		nodes, err := (subscription.Native{HWID: s.HWID, Direct: !s.DisableSubscriptionBypass}).Fetch(ctx, source)
 		if err != nil {
 			health[source.ID] = SourceHealth{AttemptedAt: now, Error: err.Error()}
 			if _, ok := cache[source.ID]; !ok {
@@ -231,14 +269,15 @@ func (m Manager) buildCandidateWithMode(ctx context.Context, sources []subscript
 	manifest.addPinAndExtra(pin, groups, extra)
 
 	options := Options{
-		URL:         s.TestURL,
-		Interval:    s.TestInterval,
-		Tolerance:   s.Tolerance,
-		RoutingMark: s.RoutingMark,
-		PinnedLeaf:  pin,
-		Bypass:      mode.Bypass,
-		TunnelOff:   mode.TunnelOff,
-		TunnelMode:  tunnelCommand,
+		URL:               s.TestURL,
+		Interval:          s.TestInterval,
+		SubscriptionHosts: s.subscriptionHosts(sources),
+		Tolerance:         s.Tolerance,
+		RoutingMark:       s.RoutingMark,
+		PinnedLeaf:        pin,
+		Bypass:            mode.Bypass,
+		TunnelOff:         mode.TunnelOff,
+		TunnelMode:        tunnelCommand,
 	}
 	config, err := m.Backend.Compose(template, groups, extra, options)
 	if err != nil {

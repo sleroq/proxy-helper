@@ -13,26 +13,27 @@ import (
 )
 
 type Settings struct {
-	TemplateFile        string                     `json:"template_file"`
-	StaticOutboundsFile string                     `json:"static_outbounds_file,omitempty"`
-	ExtraOutboundsFile  string                     `json:"extra_outbounds_file,omitempty"`
-	LegacyOutboundsFile string                     `json:"legacy_outbounds_file,omitempty"`
-	StateDir            string                     `json:"state_dir"`
-	APIURL              string                     `json:"api_url"`
-	TestURL             string                     `json:"test_url"`
-	TestInterval        string                     `json:"test_interval"`
-	Tolerance           uint                       `json:"tolerance"`
-	RoutingMark         uint                       `json:"routing_mark,omitempty"`
-	SingBox             string                     `json:"sing_box"`
-	Backend             string                     `json:"backend,omitempty"`
-	Backends            map[string]BackendSettings `json:"backends,omitempty"`
-	Mihomo              string                     `json:"mihomo,omitempty"`
-	RestartCommand      []string                   `json:"restart_command,omitempty"`
-	Stores              []subscription.Store       `json:"stores"`
-	OverridesFile       string                     `json:"overrides_file"`
-	HWID                string                     `json:"hwid"`
-	ExcludeProtocols    string                     `json:"exclude_protocols"`
-	ExcludeNodeNames    string                     `json:"exclude_node_names"`
+	TemplateFile              string                     `json:"template_file"`
+	StaticOutboundsFile       string                     `json:"static_outbounds_file,omitempty"`
+	ExtraOutboundsFile        string                     `json:"extra_outbounds_file,omitempty"`
+	LegacyOutboundsFile       string                     `json:"legacy_outbounds_file,omitempty"`
+	StateDir                  string                     `json:"state_dir"`
+	APIURL                    string                     `json:"api_url"`
+	TestURL                   string                     `json:"test_url"`
+	TestInterval              string                     `json:"test_interval"`
+	Tolerance                 uint                       `json:"tolerance"`
+	RoutingMark               uint                       `json:"routing_mark,omitempty"`
+	SingBox                   string                     `json:"sing_box"`
+	Backend                   string                     `json:"backend,omitempty"`
+	Backends                  map[string]BackendSettings `json:"backends,omitempty"`
+	Mihomo                    string                     `json:"mihomo,omitempty"`
+	RestartCommand            []string                   `json:"restart_command,omitempty"`
+	Stores                    []subscription.Store       `json:"stores"`
+	OverridesFile             string                     `json:"overrides_file"`
+	HWID                      string                     `json:"hwid"`
+	ExcludeProtocols          string                     `json:"exclude_protocols"`
+	ExcludeNodeNames          string                     `json:"exclude_node_names"`
+	DisableSubscriptionBypass bool                       `json:"disable_subscription_bypass,omitempty"`
 }
 
 type BackendSettings struct {

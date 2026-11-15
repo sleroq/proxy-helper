@@ -59,6 +59,16 @@ func checkResponse(response *http.Response, source Source) error {
 	return nil
 }
 
+// Hostname returns the destination used by the subscription without exposing its URL.
+func (s Source) Hostname() (string, error) {
+	address, err := sourceAddress(s)
+	if err != nil {
+		return "", err
+	}
+	parsed, _ := url.Parse(address)
+	return strings.ToLower(strings.TrimSuffix(parsed.Hostname(), ".")), nil
+}
+
 func sourceAddress(source Source) (string, error) {
 	address := source.URL
 	if source.URLFile != "" {
@@ -69,7 +79,7 @@ func sourceAddress(source Source) (string, error) {
 		address = strings.TrimRight(string(data), "\r\n")
 	}
 	parsed, err := url.Parse(address)
-	if err != nil || parsed.Host == "" || (parsed.Scheme != "https" && parsed.Scheme != "http") || strings.ContainsAny(address, "\r\n") {
+	if err != nil || parsed.Hostname() == "" || (parsed.Scheme != "https" && parsed.Scheme != "http") || strings.ContainsAny(address, "\r\n") || strings.ContainsAny(parsed.Hostname(), ", \t") {
 		return "", fmt.Errorf("source %s: invalid HTTP subscription URL", source.ID)
 	}
 	return address, nil

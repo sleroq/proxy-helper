@@ -636,7 +636,7 @@ func TestAllFailedFirstBootDoesNotInstall(t *testing.T) {
 	delete(f.bodies, "/one")
 	delete(f.bodies, "/two")
 	f.mu.Unlock()
-	if output := f.run("", false, "update"); !strings.Contains(output, "unavailable: [one two]") {
+	if output := f.run("", false, "--no-subscription-bypass", "update"); !strings.Contains(output, "unavailable: [one two]") {
 		t.Fatal(output)
 	}
 	if f.read("state/config.json") != before {
@@ -711,6 +711,8 @@ func TestManySourcesAndLegacyMigration(t *testing.T) {
 
 func TestUpdateBootstrapsLegacyCacheWithoutSourceMapping(t *testing.T) {
 	f := newFixture(t)
+	f.config["disable_subscription_bypass"] = true
+	f.write("config.json", f.config)
 	if err := os.MkdirAll(filepath.Join(f.dir, "state"), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -877,7 +879,7 @@ func TestMihomoConfig(t *testing.T) {
 	}
 	if len(config.Proxies) != 2 || config.Proxies[0].Name != "a" || config.Proxies[0].Type != "ss" ||
 		len(config.Groups) == 0 || config.Groups[len(config.Groups)-1].Name != "proxy" ||
-		len(config.Rules) == 0 || config.Rules[0] != "MATCH,proxy" {
+		len(config.Rules) == 0 || config.Rules[len(config.Rules)-1] != "MATCH,proxy" {
 		t.Fatalf("invalid mihomo config: %+v", config)
 	}
 }
@@ -930,7 +932,7 @@ func TestCLIBranding(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ph %v: %v\n%s", args, err, output)
 		}
-		if !strings.HasPrefix(string(output), "Usage: ph [--config PATH] COMMAND\n") {
+		if !strings.HasPrefix(string(output), "Usage: ph [--config PATH] [--no-subscription-bypass] COMMAND\n") {
 			t.Fatalf("unexpected help: %s", output)
 		}
 	}

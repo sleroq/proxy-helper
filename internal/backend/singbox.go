@@ -27,11 +27,20 @@ func (b singBox) Template() json.RawMessage {
 
 func (b singBox) Compose(template json.RawMessage, groups []proxy.Group, extra []proxy.Node, opts app.Options) (json.RawMessage, error) {
 	options := singbox.Options{
-		URL: opts.URL, Interval: opts.Interval, Tolerance: opts.Tolerance,
+		SubscriptionHosts: opts.SubscriptionHosts,
+		URL:               opts.URL, Interval: opts.Interval, Tolerance: opts.Tolerance,
 		RoutingMark: opts.RoutingMark, PinnedLeaf: opts.PinnedLeaf,
 		Bypass: opts.Bypass, TunnelOff: opts.TunnelOff, TunnelMode: opts.TunnelMode,
 	}
 	return singbox.Compose(template, groups, extra, options)
+}
+
+func (b singBox) EnsureSubscriptionBypass(config json.RawMessage, hosts []string) (json.RawMessage, bool, error) {
+	return singbox.EnsureSubscriptionBypass(config, hosts)
+}
+
+func (b singBox) HasSubscriptionBypass(config json.RawMessage) (bool, error) {
+	return singbox.HasSubscriptionBypass(config)
 }
 
 func (b singBox) Legacy(template json.RawMessage, nodes []proxy.Node, mark uint) (json.RawMessage, error) {

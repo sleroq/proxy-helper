@@ -30,8 +30,17 @@ func (b mihomoClient) Compose(template json.RawMessage, groups []proxy.Group, ex
 	}
 	options := mihomo.Options{
 		URL: opts.URL, Interval: opts.Interval, Tolerance: opts.Tolerance, PinnedLeaf: opts.PinnedLeaf,
+		SubscriptionHosts: opts.SubscriptionHosts,
 	}
 	return mihomo.Compose(template, groups, options)
+}
+
+func (b mihomoClient) HasSubscriptionBypass(config json.RawMessage) (bool, error) {
+	return mihomo.HasSubscriptionBypass(config)
+}
+
+func (b mihomoClient) EnsureSubscriptionBypass(config json.RawMessage, hosts []string) (json.RawMessage, bool, error) {
+	return mihomo.EnsureSubscriptionBypass(config, hosts)
 }
 
 func (b mihomoClient) Legacy(json.RawMessage, []proxy.Node, uint) (json.RawMessage, error) {

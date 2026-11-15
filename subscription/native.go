@@ -21,12 +21,18 @@ import (
 type Native struct {
 	Client *http.Client
 	HWID   string
+	Direct bool
 }
 
 func (n Native) Fetch(ctx context.Context, source Source) ([]proxy.Node, error) {
 	client := http.Client{Timeout: 60 * time.Second}
 	if n.Client != nil {
 		client = *n.Client
+	} else if n.Direct {
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.Proxy = nil
+		client.Transport = transport
+		defer transport.CloseIdleConnections()
 	}
 	client.CheckRedirect = nativeRedirect(client.CheckRedirect)
 	response, err := fetchResponse(ctx, source, &client, n.HWID)

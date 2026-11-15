@@ -23,14 +23,15 @@ func field[T string | uint | []string](value T) json.RawMessage {
 type Group = proxy.Group
 
 type Options struct {
-	URL         string
-	Interval    string
-	Tolerance   uint
-	RoutingMark uint
-	PinnedLeaf  string
-	Bypass      bool
-	TunnelOff   bool
-	TunnelMode  bool
+	SubscriptionHosts []string
+	URL               string
+	Interval          string
+	Tolerance         uint
+	RoutingMark       uint
+	PinnedLeaf        string
+	Bypass            bool
+	TunnelOff         bool
+	TunnelMode        bool
 }
 
 type outboundSet struct {
@@ -129,7 +130,12 @@ func Compose(template json.RawMessage, groups []Group, extra []Outbound, options
 	if err := applyMode(root, options); err != nil {
 		return nil, err
 	}
-	return install(root, set.nodes, options.RoutingMark)
+	config, err := install(root, set.nodes, options.RoutingMark)
+	if err != nil || options.Bypass {
+		return config, err
+	}
+	config, _, err = EnsureSubscriptionBypass(config, options.SubscriptionHosts)
+	return config, err
 }
 
 func composeOutbounds(groups []Group, extra []Outbound, options Options) (outboundSet, []string, error) {

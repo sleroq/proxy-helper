@@ -11,10 +11,11 @@ import (
 )
 
 type Options struct {
-	URL        string
-	Interval   string
-	Tolerance  uint
-	PinnedLeaf string
+	URL               string
+	Interval          string
+	Tolerance         uint
+	PinnedLeaf        string
+	SubscriptionHosts []string
 }
 
 func Compose(template json.RawMessage, groups []proxy.Group, options Options) (json.RawMessage, error) {
@@ -46,7 +47,12 @@ func Compose(template json.RawMessage, groups []proxy.Group, options Options) (j
 		}
 		root[key] = data
 	}
-	return json.MarshalIndent(root, "", "  ")
+	config, err := json.MarshalIndent(root, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	config, _, err = EnsureSubscriptionBypass(config, options.SubscriptionHosts)
+	return config, err
 }
 
 func prepareTemplate(root map[string]json.RawMessage) error {

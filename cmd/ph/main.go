@@ -21,7 +21,9 @@ import (
 
 var version = "dev"
 
-const usage = `Usage: ph [--config PATH] COMMAND
+const usage = `Usage: ph [--config PATH] [--no-subscription-bypass] COMMAND
+
+  --no-subscription-bypass     Fetch using normal proxy settings
 
   version                      Print CLI version
   init [--backend mihomo]      Create standalone XDG configuration
@@ -67,6 +69,7 @@ func runWithSignals(args []string) error {
 func run(ctx context.Context, args []string) error {
 	global := flag.NewFlagSet("ph", flag.ContinueOnError)
 	path := global.String("config", "", "configuration path")
+	noSubscriptionBypass := global.Bool("no-subscription-bypass", false, "disable direct subscription routing")
 	global.Usage = func() { fmt.Fprint(os.Stderr, usage) }
 	if err := global.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -97,14 +100,15 @@ func run(ctx context.Context, args []string) error {
 	if args[0] == "init" {
 		return initCommand(*path, args[1:])
 	}
-	return runConfigured(ctx, *path, args)
+	return runConfigured(ctx, *path, args, *noSubscriptionBypass)
 }
 
-func runConfigured(ctx context.Context, path string, args []string) error {
+func runConfigured(ctx context.Context, path string, args []string, noSubscriptionBypass bool) error {
 	settings, err := app.LoadSettings(path)
 	if err != nil {
 		return err
 	}
+	settings.DisableSubscriptionBypass = settings.DisableSubscriptionBypass || noSubscriptionBypass
 	if args[0] == "backend" {
 		return backendCommand(ctx, settings, args[1:])
 	}

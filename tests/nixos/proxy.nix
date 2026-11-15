@@ -122,6 +122,7 @@ pkgs.testers.runNixOSTest {
           prefixLength = 24;
         }
       ];
+      networking.extraHosts = "${fixtureAddress} subscription.test";
       environment.systemPackages = [ pkgs.curl ];
       environment.etc."ph/provider-url" = {
         text = subscriptionURL + "\n";
@@ -185,9 +186,16 @@ pkgs.testers.runNixOSTest {
 
     with subtest("Independent NixOS mihomo module"):
         standalone.wait_until_succeeds("systemctl is-active network-addresses-eth1.service", timeout=30)
+        standalone.fail("systemctl is-failed --quiet ph-mihomo.service")
         standalone.fail(ip_http)
         standalone.succeed("ph-mihomo update")
         standalone.wait_for_unit("ph-mihomo.service")
+        standalone.wait_until_succeeds(proxy_http(2080), timeout=30)
+        standalone.succeed(
+            "ph-mihomo subscription add --id second --prefix other- "
+            "http://subscription.test:18080/subscription"
+        )
+        standalone.succeed("ph-mihomo update second")
         standalone.wait_until_succeeds(proxy_http(2080), timeout=30)
         standalone.succeed("systemctl start ph-mihomo-update.service")
         standalone.wait_until_succeeds(proxy_http(2080), timeout=30)

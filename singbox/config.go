@@ -139,7 +139,7 @@ func Compose(template json.RawMessage, groups []Group, extra []Outbound, options
 }
 
 func composeOutbounds(groups []Group, extra []Outbound, options Options) (outboundSet, []string, error) {
-	set := outboundSet{tags: map[string]bool{"direct": true, "auto": true, "proxy": true}}
+	set := outboundSet{tags: map[string]bool{"direct": true, "auto": true, "proxy": true, subscriptionDirect: true}}
 	if !options.Bypass {
 		if err := set.addLeaves(groups, extra); err != nil {
 			return set, nil, err

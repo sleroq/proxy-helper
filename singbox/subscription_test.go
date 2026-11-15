@@ -11,6 +11,7 @@ import (
 
 func TestSubscriptionBypass(t *testing.T) {
 	template := json.RawMessage(`{
+ "outbounds":[{"type":"direct","tag":"direct"}],
  "dns":{"servers":[{"type":"local","tag":"existing"}],"rules":[{"domain_suffix":["example"],"server":"existing"}]},
  "route":{"rules":[{"action":"hijack-dns","protocol":"dns"},{"outbound":"proxy"}]},
  "experimental":{"large":900719925474099312345}
@@ -63,7 +64,8 @@ func assertRouteRules(t *testing.T, rules []json.RawMessage, want []string) {
 
 func TestSubscriptionBypassUpdates(t *testing.T) {
 	hosts := []string{"sub.example", "192.0.2.1", "2001:db8::1"}
-	config, changed, err := EnsureSubscriptionBypass(json.RawMessage(`{}`), hosts)
+	base := json.RawMessage(`{"outbounds":[{"type":"direct","tag":"direct"}]}`)
+	config, changed, err := EnsureSubscriptionBypass(base, hosts)
 	if err != nil || !changed {
 		t.Fatalf("initial ensure: %v %v", changed, err)
 	}
@@ -76,7 +78,8 @@ func TestSubscriptionBypassUpdates(t *testing.T) {
 }
 
 func TestSubscriptionBypassAddsHosts(t *testing.T) {
-	again, _, err := EnsureSubscriptionBypass(json.RawMessage(`{}`), []string{"sub.example"})
+	base := json.RawMessage(`{"outbounds":[{"type":"direct","tag":"direct"}]}`)
+	again, _, err := EnsureSubscriptionBypass(base, []string{"sub.example"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +134,7 @@ func TestSubscriptionBypassRealCore(t *testing.T) {
 }
 
 func TestHasSubscriptionBypass(t *testing.T) {
-	base := json.RawMessage(`{"route":{"final":"direct"}}`)
+	base := json.RawMessage(`{"outbounds":[{"type":"direct","tag":"direct"}],"route":{"final":"direct"}}`)
 	for _, hosts := range [][]string{nil, {"192.0.2.1"}, {"example.com"}} {
 		config, _, err := EnsureSubscriptionBypass(base, hosts)
 		if err != nil {

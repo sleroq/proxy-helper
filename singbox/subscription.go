@@ -4,11 +4,15 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/netip"
 	"slices"
 )
 
-const subscriptionDNS = "ph-subscription-local"
+const (
+	subscriptionDNS    = "ph-subscription-local"
+	subscriptionDirect = "ph-subscription-direct"
+)
 
 // EnsureSubscriptionBypass adds direct DNS and routing for subscription hosts.
 // Existing rules are retained so an installed configuration can be updated in place.
@@ -22,27 +26,111 @@ func EnsureSubscriptionBypass(config json.RawMessage, hosts []string) (json.RawM
 		return config, false, nil
 	}
 
-	domains, ips := subscriptionHosts(hosts)
-
-	route, err := subscriptionSection(root, "route")
+	changed, err := configureSubscriptionBypass(root, hosts)
 	if err != nil {
 		return nil, false, err
+	}
+	if !changed {
+		return config, false, nil
+	}
+	result, err := json.MarshalIndent(root, "", "  ")
+	return result, true, err
+}
+
+func configureSubscriptionBypass(root map[string]json.RawMessage, hosts []string) (bool, error) {
+	domains, ips := subscriptionHosts(hosts)
+	route, err := subscriptionSection(root, "route")
+	if err != nil {
+		return false, err
 	}
 	routeRules, err := subscriptionRules(route, "route")
 	if err != nil {
-		return nil, false, err
+		return false, err
 	}
-	dnsChanged, err := addSubscriptionDNS(root, domains)
+	outboundChanged, err := addSubscriptionOutbound(root, len(domains) > 0)
 	if err != nil {
-		return nil, false, err
+		return false, err
+	}
+	dnsChanged, err := addSubscriptionDNS(root, route, domains)
+	if err != nil {
+		return false, err
 	}
 	routeChanged := addSubscriptionRoutes(route, routeRules, domains, ips)
-	if !dnsChanged && !routeChanged {
-		return config, false, nil
+	if !outboundChanged && !dnsChanged && !routeChanged {
+		return false, nil
 	}
 	root["route"], _ = json.Marshal(route)
-	result, err := json.MarshalIndent(root, "", "  ")
-	return result, true, err
+	return true, nil
+}
+
+func addSubscriptionOutbound(root map[string]json.RawMessage, domains bool) (bool, error) {
+	var outbounds []map[string]json.RawMessage
+	if err := json.Unmarshal(root["outbounds"], &outbounds); err != nil {
+		return false, fmt.Errorf("invalid outbounds")
+	}
+	direct, managed, err := subscriptionOutbounds(outbounds)
+	if err != nil {
+		return false, err
+	}
+	expected, err := expectedSubscriptionOutbound(direct, managed)
+	if err != nil {
+		return false, err
+	}
+
+	if domains {
+		expected["domain_resolver"] = field(subscriptionDNS)
+	}
+	if managed != nil && sameRule(managed, expected) {
+		return false, nil
+	}
+	if managed == nil {
+		outbounds = append(outbounds, expected)
+	} else {
+		clear(managed)
+		maps.Copy(managed, expected)
+	}
+	root["outbounds"], _ = json.Marshal(outbounds)
+	return true, nil
+}
+
+func subscriptionOutbounds(outbounds []map[string]json.RawMessage) (map[string]json.RawMessage, map[string]json.RawMessage, error) {
+	var direct, managed map[string]json.RawMessage
+	for _, outbound := range outbounds {
+		var tag string
+		_ = json.Unmarshal(outbound["tag"], &tag)
+		switch tag {
+		case "direct":
+			direct = outbound
+		case subscriptionDirect:
+			if managed != nil {
+				return nil, nil, fmt.Errorf("subscription outbound tag collision")
+			}
+			managed = outbound
+		}
+	}
+	return direct, managed, nil
+}
+
+func expectedSubscriptionOutbound(direct, managed map[string]json.RawMessage) (map[string]json.RawMessage, error) {
+	if direct == nil {
+		return nil, fmt.Errorf("missing direct outbound")
+	}
+	var kind string
+	_ = json.Unmarshal(direct["type"], &kind)
+	if kind != "direct" {
+		return nil, fmt.Errorf("invalid direct outbound")
+	}
+
+	expected := maps.Clone(direct)
+	expected["tag"] = field(subscriptionDirect)
+	if managed != nil && !sameRule(managed, expected) {
+		// A previously installed domain resolver remains in place on IP-only updates.
+		expected["domain_resolver"] = field(subscriptionDNS)
+		if !sameRule(managed, expected) {
+			return nil, fmt.Errorf("subscription outbound tag collision")
+		}
+	}
+	return expected, nil
 }
 
 func subscriptionHosts(hosts []string) ([]string, []string) {
@@ -89,7 +177,7 @@ func addSubscriptionRoutes(route map[string]json.RawMessage, routeRules []map[st
 
 func missingSubscriptionRoutes(covered, added []map[string]json.RawMessage, key string, hosts []string) []map[string]json.RawMessage {
 	for _, host := range hosts {
-		rule := map[string]json.RawMessage{key: field([]string{host}), "outbound": field("direct")}
+		rule := map[string]json.RawMessage{key: field([]string{host}), "outbound": field(subscriptionDirect)}
 		if !containsRule(covered, rule) && !containsRule(added, rule) {
 			added = append(added, rule)
 		}
@@ -97,8 +185,9 @@ func missingSubscriptionRoutes(covered, added []map[string]json.RawMessage, key 
 	return added
 }
 
-func addSubscriptionDNS(root map[string]json.RawMessage, domains []string) (bool, error) {
+func addSubscriptionDNS(root, route map[string]json.RawMessage, domains []string) (bool, error) {
 	changed := false
+
 	dns, err := subscriptionSection(root, "dns")
 	if err != nil {
 		return false, err
@@ -108,7 +197,7 @@ func addSubscriptionDNS(root map[string]json.RawMessage, domains []string) (bool
 		return false, err
 	}
 
-	changed, err = addSubscriptionResolver(dns)
+	changed, err = addSubscriptionResolver(dns, route, len(domains) > 0)
 	if err != nil {
 		return false, err
 	}
@@ -123,19 +212,42 @@ func addSubscriptionDNS(root map[string]json.RawMessage, domains []string) (bool
 	if len(domains) > 0 {
 		dns["rules"], _ = json.Marshal(dnsRules)
 	}
-	root["dns"], _ = json.Marshal(dns)
+	if changed {
+		root["dns"], _ = json.Marshal(dns)
+	}
 	return changed, nil
 }
 
-func addSubscriptionResolver(dns map[string]json.RawMessage) (bool, error) {
-	changed := false
+func addSubscriptionResolver(dns, route map[string]json.RawMessage, add bool) (bool, error) {
+	servers, found, err := subscriptionDNSServers(dns)
+	if err != nil {
+		return false, err
+	}
+	if found || !add {
+		return false, nil
+	}
+
+	if len(servers) == 1 && len(route["default_domain_resolver"]) == 0 {
+		var tag string
+		_ = json.Unmarshal(servers[0]["tag"], &tag)
+		if tag == "" {
+			tag = "ph-subscription-previous-dns"
+			servers[0]["tag"] = field(tag)
+		}
+		route["default_domain_resolver"] = field(tag)
+	}
+	servers = append(servers, map[string]json.RawMessage{"type": field("local"), "tag": field(subscriptionDNS)})
+	dns["servers"], _ = json.Marshal(servers)
+	return true, nil
+}
+
+func subscriptionDNSServers(dns map[string]json.RawMessage) ([]map[string]json.RawMessage, bool, error) {
 	var servers []map[string]json.RawMessage
 	if len(dns["servers"]) > 0 {
 		if err := json.Unmarshal(dns["servers"], &servers); err != nil {
-			return false, fmt.Errorf("invalid DNS servers")
+			return nil, false, fmt.Errorf("invalid DNS servers")
 		}
 	}
-
 	found := false
 	for _, server := range servers {
 		var tag string
@@ -143,48 +255,40 @@ func addSubscriptionResolver(dns map[string]json.RawMessage) (bool, error) {
 		if tag == subscriptionDNS {
 			expected := map[string]json.RawMessage{"type": field("local"), "tag": field(subscriptionDNS)}
 			if !sameRule(server, expected) {
-				return false, fmt.Errorf("subscription DNS tag collision")
+				return nil, false, fmt.Errorf("subscription DNS tag collision")
 			}
 			found = true
 		}
 	}
-	if !found {
-		servers = append(servers, map[string]json.RawMessage{"type": field("local"), "tag": field(subscriptionDNS)})
-		dns["servers"], _ = json.Marshal(servers)
-		changed = true
-	}
-
-	return changed, nil
+	return servers, found, nil
 }
 
-// HasSubscriptionBypass reports whether the reserved resolver identifying managed
-// subscription rules is present, including when only IP hosts were installed.
+// HasSubscriptionBypass recognizes current and legacy subscription bypass configurations.
 func HasSubscriptionBypass(config json.RawMessage) (bool, error) {
 	var root map[string]json.RawMessage
 	if err := json.Unmarshal(config, &root); err != nil || root == nil {
 		return false, fmt.Errorf("config must be a JSON object")
 	}
+	var outbounds []map[string]json.RawMessage
+	if len(root["outbounds"]) > 0 {
+		if err := json.Unmarshal(root["outbounds"], &outbounds); err != nil {
+			return false, fmt.Errorf("invalid outbounds")
+		}
+	}
+	direct, managed, err := subscriptionOutbounds(outbounds)
+	if err != nil {
+		return false, err
+	}
+	if managed != nil {
+		_, err := expectedSubscriptionOutbound(direct, managed)
+		return err == nil, err
+	}
 	dns, err := subscriptionSection(root, "dns")
 	if err != nil {
 		return false, err
 	}
-	var servers []map[string]json.RawMessage
-	if len(dns["servers"]) > 0 {
-		if err := json.Unmarshal(dns["servers"], &servers); err != nil {
-			return false, fmt.Errorf("invalid DNS servers")
-		}
-	}
-	for _, server := range servers {
-		var tag string
-		_ = json.Unmarshal(server["tag"], &tag)
-		if tag == subscriptionDNS {
-			if !sameRule(server, map[string]json.RawMessage{"type": field("local"), "tag": field(subscriptionDNS)}) {
-				return false, fmt.Errorf("subscription DNS tag collision")
-			}
-			return true, nil
-		}
-	}
-	return false, nil
+	_, found, err := subscriptionDNSServers(dns)
+	return found, err
 }
 
 func subscriptionSection(root map[string]json.RawMessage, name string) (map[string]json.RawMessage, error) {
@@ -235,7 +339,7 @@ func priorityRules(rules []map[string]json.RawMessage, dns bool) []map[string]js
 	for i, rule := range rules {
 		var target string
 		key := "outbound"
-		expected := "direct"
+		expected := subscriptionDirect
 		if dns {
 			key = "server"
 			expected = subscriptionDNS

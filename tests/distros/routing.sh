@@ -24,6 +24,13 @@ wait_http() {
     done
     fail 'routed HTTP did not recover'
 }
+wait_api() {
+    for _ in $(seq 1 30); do
+        if curl -fsS --max-time 1 --noproxy '*' http://127.0.0.1:9090/proxies/proxy > /dev/null; then return; fi
+        sleep 1
+    done
+    fail 'managed API did not recover'
+}
 start_server() {
     ip netns exec ph-server /usr/lib/ph/sing-box run -c /tmp/routing-server.json > /tmp/routing-server.log 2>&1 &
     server_pid=$!
@@ -84,6 +91,7 @@ printf '%s\n' http://192.0.2.2:18080/subscription > /etc/ph/routed-url
 ph subscription delete fixture
 ph subscription add --id routed --url-file /etc/ph/routed-url
 ph update
+wait_api
 tag=$(python3 -c 'import json; print(json.load(open("/var/lib/ph/subscription.json"))["nodes"][0]["tag"])')
 ph pin "$tag"
 cp /project/tests/routing/sing-box.json "$template"

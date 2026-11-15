@@ -51,7 +51,10 @@ func checkRealSubscriptionRouting(t *testing.T, name, core string) {
 		f.config["sing_box"] = core
 		f.write("template.json", map[string]any{
 			"inbounds": []any{map[string]any{"type": "mixed", "listen": "127.0.0.1", "listen_port": port}},
-			"route":    map[string]any{"final": "proxy"},
+			"dns": map[string]any{"servers": []any{map[string]any{
+				"type": "udp", "tag": "remote", "server": "127.0.0.1", "server_port": 1,
+			}}},
+			"route": map[string]any{"final": "proxy"},
 		})
 	}
 	f.write("config.json", f.config)

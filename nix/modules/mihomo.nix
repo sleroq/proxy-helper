@@ -60,10 +60,7 @@ let
     exec ${cli}/bin/ph --config ${settings} "$@"
   '';
   runner = pkgs.writeShellScript "ph-mihomo-run" ''
-    set -eu
-    umask 077
-    ${ph}/bin/ph-mihomo prepare
-    exec ${cfg.package}/bin/mihomo -f ${state}/config.json -d ${state}
+    exec ${ph}/bin/ph-mihomo run
   '';
 in
 {
@@ -163,6 +160,7 @@ in
           wantedBy = [ "multi-user.target" ];
           after = [ "network-online.target" ];
           wants = [ "network-online.target" ];
+          unitConfig.ConditionPathExists = "${state}/config.json";
           serviceConfig = {
             ExecStart = runner;
             Restart = "on-failure";

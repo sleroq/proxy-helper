@@ -25,6 +25,7 @@ in
           wantedBy = [ "multi-user.target" ];
           after = [ "network-online.target" ];
           wants = [ "network-online.target" ];
+          unitConfig.ConditionPathExists = "${cfg.stateDir}/config.json";
           serviceConfig = {
             ExecStart = phModule.runner;
             Restart = "on-failure";

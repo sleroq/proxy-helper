@@ -33,7 +33,9 @@ func TestSubscriptionBypassIgnoresProxyEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	origin.Host = "localhost.:" + origin.Port()
+	// An unspecified IPv4 destination reaches the loopback listener on Linux
+	// and macOS, but Go does not exempt it from HTTP_PROXY as it does localhost.
+	origin.Host = "0.0.0.0:" + origin.Port()
 	origin.Path = "/one"
 	f.write("declared.json", map[string]any{"subscriptions": []any{
 		map[string]any{"id": "one", "url": origin.String()},
@@ -46,6 +48,17 @@ func TestSubscriptionBypassIgnoresProxyEnvironment(t *testing.T) {
 	case <-requests:
 		t.Fatal("subscription reached environment proxy")
 	default:
+	}
+
+	withoutBypass := newFixture(t)
+	withoutBypass.write("declared.json", map[string]any{"subscriptions": []any{
+		map[string]any{"id": "one", "url": origin.String()},
+	}})
+	withoutBypass.run("", false, "--no-subscription-bypass", "update")
+	select {
+	case <-requests:
+	default:
+		t.Fatal("environment proxy was not used when bypass was disabled")
 	}
 }
 
